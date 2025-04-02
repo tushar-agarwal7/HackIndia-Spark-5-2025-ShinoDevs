@@ -1,26 +1,150 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --foreground-rgb: 51, 65, 85;
+  --background-rgb: 248, 250, 252;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+  min-height: 100vh;
+}
+
+/* Custom Animations */
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes loading {
+  0% { width: 0%; }
+  50% { width: 70%; }
+  100% { width: 100%; }
+}
+
+.animate-loading-bar {
+  animation: loading 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-25px); }
+}
+
+.animate-bounce {
+  animation: bounce 1s infinite;
+}
+
+/* Tailwind component classes */
+@layer components {
+  /* Buttons */
+  .btn-primary {
+    @apply bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white px-4 py-2 rounded-lg shadow-md transition-all transform hover:translate-y-[-2px];
+  }
+  
+  .btn-secondary {
+    @apply bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg shadow-sm transition-colors;
+  }
+  
+  .btn-tertiary {
+    @apply bg-gradient-to-r from-slate-500 to-slate-600 hover:from-slate-600 hover:to-slate-700 text-white px-4 py-2 rounded-lg shadow-sm transition-colors;
+  }
+  
+  /* Cards */
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden;
+  }
+  
+  .card-header {
+    @apply border-b border-slate-100 px-6 py-4;
+  }
+  
+  .card-body {
+    @apply p-6;
+  }
+  
+  .card-footer {
+    @apply border-t border-slate-100 px-6 py-4;
+  }
+  
+  /* Stats */
+  .stat-card-cyan {
+    @apply rounded-lg p-4 shadow-sm border bg-cyan-50 border-cyan-100;
+  }
+  
+  .stat-card-purple {
+    @apply rounded-lg p-4 shadow-sm border bg-purple-50 border-purple-100;
+  }
+  
+  .stat-card-amber {
+    @apply rounded-lg p-4 shadow-sm border bg-amber-50 border-amber-100;
+  }
+  
+  .stat-card-teal {
+    @apply rounded-lg p-4 shadow-sm border bg-teal-50 border-teal-100;
+  }
+  
+  /* Badges */
+  .badge {
+    @apply text-xs px-2 py-1 rounded-full font-medium;
+  }
+  
+  .badge-primary {
+    @apply bg-cyan-100 text-cyan-800;
+  }
+  
+  .badge-secondary {
+    @apply bg-amber-100 text-amber-800;
+  }
+  
+  .badge-success {
+    @apply bg-emerald-100 text-emerald-800;
+  }
+  
+  .badge-danger {
+    @apply bg-rose-100 text-rose-800;
+  }
+  
+  /* Progress bars */
+  .progress-bar {
+    @apply w-full bg-slate-200 rounded-full h-2 overflow-hidden;
+  }
+  
+  .progress-bar-value {
+    @apply h-full rounded-full;
+  }
+  
+  .progress-cyan {
+    @apply bg-gradient-to-r from-cyan-400 to-teal-500;
+  }
+  
+  /* Navigation */
+  .nav-link {
+    @apply flex flex-col items-center text-slate-400 hover:text-cyan-600 transition-colors;
+  }
+  
+  .nav-link-active {
+    @apply flex flex-col items-center text-cyan-600;
+  }
+  
+  .practice-button {
+    @apply absolute -top-10 bg-gradient-to-r from-cyan-500 to-teal-500 rounded-full p-3 shadow-lg z-10;
+  }
 }

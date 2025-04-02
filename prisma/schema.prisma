@@ -1,0 +1,335 @@
+// This is your Prisma schema file for ShinobiSpeak
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User management
+model User {
+  id                String            @id @default(uuid())
+  walletAddress     String            @unique
+  username          String?
+  email             String?           @unique
+  avatarUrl         String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  // User profile data
+  nativeLanguage    String?
+  learningLanguages UserLanguage[]
+  
+  // Relationships
+  challenges        UserChallenge[]   // Challenges the user is participating in
+  createdChallenges Challenge[]       // Challenges created by the user
+  aiConversations   AIConversation[]  // History of AI conversations
+  progressRecords   ProgressRecord[]  // User's learning progress
+  achievements      UserAchievement[]
+  notifications     Notification[]
+  transactions      Transaction[]
+  lessons            LessonCompletion[]
+  
+  
+  @@index([walletAddress])
+}
+
+model UserLanguage {
+  id              String          @id @default(uuid())
+  userId          String
+  languageCode    String          // ISO code (e.g., "en", "jp", "es")
+  proficiencyLevel ProficiencyLevel
+  startedAt       DateTime        @default(now())
+  lastPracticed    DateTime?
+  
+  // Relationships
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, languageCode])
+}
+
+enum ProficiencyLevel {
+  BEGINNER
+  ELEMENTARY
+  INTERMEDIATE
+  ADVANCED
+  FLUENT
+}
+
+// Challenge system
+model Challenge {
+  id                String          @id @default(uuid())
+  title             String
+  description       String
+  languageCode      String
+  proficiencyLevel  ProficiencyLevel
+  durationDays      Int
+  dailyRequirement  Int             // Minutes of practice required daily
+  stakeAmount       Float           // Amount in USDC to stake
+  yieldPercentage   Float           // Expected yield percentage
+  isHardcore        Boolean         // If true, stake is lost on failure
+  maxParticipants   Int?            // Optional max number of participants
+  inviteCode        String?         // Optional invite code for private challenges
+  creatorId         String
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  // Smart contract data
+  contractAddress   String?
+  contractChain     String?         // e.g., "ethereum", "polygon"
+  
+  // Relationships
+  creator           User            @relation(fields: [creatorId], references: [id])
+  participants      UserChallenge[]
+  lessons           Lesson[]
+  
+  @@index([languageCode, proficiencyLevel])
+  @@index([isActive])
+}
+
+model UserChallenge {
+  id                String          @id @default(uuid())
+  userId            String
+  challengeId       String
+  startDate         DateTime        @default(now())
+  endDate           DateTime?
+  stakedAmount      Float           // Actual amount staked (in USDC)
+  currentStreak     Int             @default(0)  // Current consecutive days
+  longestStreak     Int             @default(0)  // Longest consecutive days
+  progressPercentage Float          @default(0)  // 0-100
+  status            ChallengeStatus @default(ACTIVE)
+  
+  // Transaction data
+  stakeTxHash       String?         // Transaction hash for staking
+  completionTxHash  String?         // Transaction hash for completion/reward
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challenge         Challenge       @relation(fields: [challengeId], references: [id])
+  dailyProgress     DailyProgress[]
+  
+  @@unique([userId, challengeId])
+  @@index([status])
+}
+
+enum ChallengeStatus {
+  ACTIVE
+  COMPLETED
+  FAILED
+  WITHDRAWN
+}
+
+model DailyProgress {
+  id                String          @id @default(uuid())
+  userChallengeId   String
+  date              DateTime        @default(now())
+  minutesPracticed  Int
+  completed         Boolean         @default(false)
+  
+  // Relationships
+  userChallenge     UserChallenge   @relation(fields: [userChallengeId], references: [id], onDelete: Cascade)
+  
+  @@unique([userChallengeId, date])
+}
+
+// Learning content
+model Lesson {
+  id                String          @id @default(uuid())
+  title             String
+  description       String
+  challengeId       String?
+  languageCode      String
+  proficiencyLevel  ProficiencyLevel
+  estimatedMinutes  Int
+  content           Json            // Structured lesson content
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  
+  // Relationships
+  challenge         Challenge?      @relation(fields: [challengeId], references: [id])
+  completions       LessonCompletion[]
+  
+  @@index([languageCode, proficiencyLevel])
+}
+
+model LessonCompletion {
+  id                String          @id @default(uuid())
+  userId            String
+  lessonId          String
+  completedAt       DateTime        @default(now())
+  timeSpentMinutes  Int
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade) 
+  lesson            Lesson          @relation(fields: [lessonId], references: [id])
+  
+  @@unique([userId, lessonId])
+}
+
+// AI Conversation system
+model AIConversation {
+  id                String          @id @default(uuid())
+  userId            String
+  languageCode      String
+  avatarType        String          // Type of AI character/avatar used
+  startedAt         DateTime        @default(now())
+  endedAt           DateTime?
+  durationMinutes   Int?
+  userChallengeId   String?         // Optional link to a challenge
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages          ConversationMessage[]
+  evaluations       ConversationEvaluation?
+  
+  @@index([userId, startedAt])
+}
+
+model ConversationMessage {
+  id                String          @id @default(uuid())
+  conversationId    String
+  sender            MessageSender
+  content           String          // Text content
+  audioUrl          String?         // URL to audio recording
+  timestamp         DateTime        @default(now())
+  
+  // Relationships
+  conversation      AIConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@index([conversationId, timestamp])
+}
+
+enum MessageSender {
+  USER
+  AI
+}
+
+model ConversationEvaluation {
+  id                String          @id @default(uuid())
+  conversationId    String          @unique
+  grammarScore      Float           // 0-100
+  vocabularyScore   Float           // 0-100
+  pronunciationScore Float          // 0-100
+  fluencyScore      Float           // 0-100
+  overallScore      Float           // 0-100
+  feedback          String          // Detailed feedback
+  evaluatedAt       DateTime        @default(now())
+  
+  // Relationships
+  conversation      AIConversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@index([conversationId])
+}
+
+// Progress tracking
+model ProgressRecord {
+  id                String          @id @default(uuid())
+  userId            String
+  languageCode      String
+  recordDate        DateTime        @default(now())
+  vocabularySize    Int?            // Estimated vocabulary size
+  grammarAccuracy   Float?          // 0-100
+  speakingFluency   Float?          // 0-100
+  listeningComprehension Float?     // 0-100
+  overallLevel      ProficiencyLevel?
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, languageCode, recordDate])
+}
+
+// Achievement system
+model Achievement {
+  id                String          @id @default(uuid())
+  name              String          @unique
+  description       String
+  badgeUrl          String
+  achievementType   AchievementType
+  threshold         Int             // Value needed to earn achievement
+  
+  // Relationships
+  userAchievements  UserAchievement[]
+}
+
+enum AchievementType {
+  STREAK_DAYS
+  CONVERSATION_COUNT
+  VOCABULARY_SIZE
+  CHALLENGE_COMPLETED
+  PRACTICE_HOURS
+}
+
+model UserAchievement {
+  id                String          @id @default(uuid())
+  userId            String
+  achievementId     String
+  earnedAt          DateTime        @default(now())
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement       Achievement     @relation(fields: [achievementId], references: [id])
+  
+  @@unique([userId, achievementId])
+}
+
+// Notification system
+model Notification {
+  id                String          @id @default(uuid())
+  userId            String
+  type              NotificationType
+  title             String
+  message           String
+  read              Boolean         @default(false)
+  createdAt         DateTime        @default(now())
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, read])
+}
+
+enum NotificationType {
+  CHALLENGE_REMINDER
+  STREAK_WARNING
+  ACHIEVEMENT_EARNED
+  CHALLENGE_COMPLETED
+  STAKE_CONFIRMED
+  REWARD_DISTRIBUTED
+}
+
+// Financial transactions
+model Transaction {
+  id                String          @id @default(uuid())
+  userId            String
+  transactionType   TransactionType
+  amount            Float
+  currency          String          // e.g., "USDC"
+  txHash            String?         // Blockchain transaction hash
+  status            TransactionStatus
+  createdAt         DateTime        @default(now())
+  completedAt       DateTime?
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, transactionType])
+  @@index([txHash])
+}
+
+enum TransactionType {
+  STAKE
+  UNSTAKE
+  REWARD
+  YIELD
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
