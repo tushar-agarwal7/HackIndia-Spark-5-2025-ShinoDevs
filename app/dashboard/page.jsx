@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner'; 
 
 export default function Dashboard() {
   const router = useRouter();
@@ -13,85 +14,150 @@ export default function Dashboard() {
   const [activeChallenges, setActiveChallenges] = useState([]);
   const [todayChallenge, setTodayChallenge] = useState(null);
   const [activityData, setActivityData] = useState([]);
+  const [error, setError] = useState(null);
   
   useEffect(() => {
     // Fetch user profile and challenges
     async function fetchUserData() {
       try {
         setIsLoading(true);
+        setError(null);
         
-        // In a real app, fetch actual data from your API
-        // For now, we'll use dummy data to showcase the UI
-        setTimeout(() => {
-          // Dummy profile data
-          setProfile({
-            username: "NinjaLearner",
-            walletAddress: "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
-            avatarUrl: "/images/ninja-avatar.png",
-            nativeLanguage: "en",
-            learningLanguages: [
-              { id: "1", languageCode: "ja", proficiencyLevel: "INTERMEDIATE" },
-              { id: "2", languageCode: "ko", proficiencyLevel: "BEGINNER" }
-            ],
-            stats: {
-              totalMinutesPracticed: 1345,
-              vocabularySize: 728,
-              currentStreak: 12,
-              longestStreak: 15
-            }
+        // Fetch user profile
+        const profileRes = await fetch('/api/users/profile');
+        if (!profileRes.ok) {
+          if (profileRes.status === 401) {
+            // Redirect to login if unauthorized
+            router.push('/auth/signin');
+            return;
+          }
+          throw new Error('Failed to fetch user profile');
+        }
+        const profileData = await profileRes.json();
+        
+        // Fetch user stats
+        const statsRes = await fetch('/api/users/analytics');
+        let statsData = {};
+        if (statsRes.ok) {
+          const analyticsData = await statsRes.json();
+          statsData = {
+            totalMinutesPracticed: analyticsData.summary?.totalPracticeMinutes || 0,
+            vocabularySize: analyticsData.progressRecords?.[0]?.vocabularySize || 0,
+            currentStreak: Object.values(analyticsData.streaksByLanguage || {})[0] || 0,
+            longestStreak: analyticsData.progressRecords?.[0]?.longestStreak || 0
+          };
+        }
+        
+        // Combine profile with stats
+        const fullProfile = {
+          ...profileData,
+          stats: statsData
+        };
+        setProfile(fullProfile);
+        
+        // Fetch active challenges
+        const challengesRes = await fetch('/api/challenges/user?status=ACTIVE');
+        if (challengesRes.ok) {
+          const challengesData = await challengesRes.json();
+          
+          // Transform challenge data to match the expected format
+          const formattedChallenges = challengesData.map(challenge => {
+            const startDate = new Date(challenge.startDate);
+            const endDate = new Date(challenge.endDate);
+            const today = new Date();
+            const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+            
+            return {
+              id: challenge.challengeId,
+              title: challenge.challenge.title,
+              languageCode: challenge.challenge.languageCode,
+              proficiencyLevel: challenge.challenge.proficiencyLevel,
+              durationDays: challenge.challenge.durationDays,
+              daysLeft: daysLeft > 0 ? daysLeft : 0,
+              dailyRequirement: challenge.challenge.dailyRequirement,
+              stakeAmount: challenge.stakedAmount,
+              progress: challenge.progressPercentage
+            };
           });
           
-          // Dummy active challenges
-          setActiveChallenges([
-            {
-              id: "1",
-              title: "Japanese Immersion Challenge",
-              languageCode: "ja",
-              proficiencyLevel: "INTERMEDIATE",
-              durationDays: 90,
-              daysLeft: 54,
-              dailyRequirement: 20,
-              stakeAmount: 200,
-              progress: 36
-            },
-            {
-              id: "2",
-              title: "Korean Basics",
-              languageCode: "ko",
-              proficiencyLevel: "BEGINNER",
-              durationDays: 60,
-              daysLeft: 32,
-              dailyRequirement: 15,
-              stakeAmount: 50,
-              progress: 48
-            }
-          ]);
+          setActiveChallenges(formattedChallenges);
           
-          // Dummy today's challenge
-          setTodayChallenge({
-            id: "101",
-            title: "Japanese Basics - Lesson 14",
-            description: "Learn common restaurant phrases",
-            exercise: "Translate 5 restaurant phrases into Japanese",
-            languageCode: "ja"
+          // Set today's challenge if there are active challenges
+          if (formattedChallenges.length > 0) {
+            // Prioritize the challenge with the lowest days left
+            const sortedChallenges = [...formattedChallenges].sort((a, b) => a.daysLeft - b.daysLeft);
+            const nextChallenge = sortedChallenges[0];
+            
+            // Fetch today's exercise for this challenge
+            try {
+              const exerciseRes = await fetch(`/api/challenges/${nextChallenge.id}/daily-exercise`);
+              if (exerciseRes.ok) {
+                const exerciseData = await exerciseRes.json();
+                setTodayChallenge({
+                  id: nextChallenge.id,
+                  title: nextChallenge.title,
+                  description: exerciseData.description || "Continue your daily practice to maintain your streak!",
+                  exercise: exerciseData.exercise || `Practice ${nextChallenge.dailyRequirement} minutes of ${nextChallenge.languageCode === 'ja' ? 'Japanese' : nextChallenge.languageCode === 'ko' ? 'Korean' : 'language'} today.`,
+                  languageCode: nextChallenge.languageCode
+                });
+              } else {
+                // Fallback if no specific exercise
+                setTodayChallenge({
+                  id: nextChallenge.id,
+                  title: nextChallenge.title,
+                  description: "Continue your daily practice to maintain your streak!",
+                  exercise: `Practice ${nextChallenge.dailyRequirement} minutes of ${nextChallenge.languageCode === 'ja' ? 'Japanese' : nextChallenge.languageCode === 'ko' ? 'Korean' : 'language'} today.`,
+                  languageCode: nextChallenge.languageCode
+                });
+              }
+            } catch (exerciseError) {
+              console.error('Error fetching daily exercise:', exerciseError);
+              // Fallback
+              setTodayChallenge({
+                id: nextChallenge.id,
+                title: nextChallenge.title,
+                description: "Continue your daily practice to maintain your streak!",
+                exercise: `Practice ${nextChallenge.dailyRequirement} minutes of ${nextChallenge.languageCode === 'ja' ? 'Japanese' : nextChallenge.languageCode === 'ko' ? 'Korean' : 'language'} today.`,
+                languageCode: nextChallenge.languageCode
+              });
+            }
+          }
+        }
+        
+        // Fetch weekly activity data
+        const activityRes = await fetch('/api/users/activity?period=week');
+        if (activityRes.ok) {
+          const activityData = await activityRes.json();
+          
+          // Transform activity data to match the expected format
+          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+          const today = new Date();
+          const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
+          
+          const weeklyActivity = days.map((day, index) => {
+            const isToday = index === dayOfWeek;
+            const dateStr = getDateString(new Date(today.getTime() - ((dayOfWeek - index + 7) % 7) * 24 * 60 * 60 * 1000));
+            const minutesForDay = activityData.practiceByDay?.[dateStr] ? 
+              Object.values(activityData.practiceByDay[dateStr]).reduce((sum, val) => sum + val, 0) : 0;
+            
+            return {
+              day,
+              minutes: minutesForDay,
+              isToday
+            };
           });
           
-          // Dummy activity data for chart
-          setActivityData([
-            { day: 'Sun', minutes: 25 },
-            { day: 'Mon', minutes: 30 },
-            { day: 'Tue', minutes: 15 },
-            { day: 'Wed', minutes: 45 },
-            { day: 'Thu', minutes: 20 },
-            { day: 'Fri', minutes: 35 },
-            { day: 'Sat', minutes: 10 }
-          ]);
-          
-          setIsLoading(false);
-        }, 1000);
+          setActivityData(weeklyActivity);
+        } else {
+          // Fallback to dummy data if API fails
+          const dummyActivity = generateDummyActivityData();
+          setActivityData(dummyActivity);
+        }
         
+        setIsLoading(false);
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
+        setError(error.message);
         setIsLoading(false);
       }
     }
@@ -99,8 +165,55 @@ export default function Dashboard() {
     fetchUserData();
   }, [router]);
   
+  // Helper function to generate date string in YYYY-MM-DD format
+  const getDateString = (date) => {
+    return date.toISOString().split('T')[0];
+  };
+  
+  // Generate dummy activity data if API fails
+  const generateDummyActivityData = () => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const today = new Date();
+    const dayOfWeek = today.getDay();
+    
+    return days.map((day, index) => ({
+      day,
+      minutes: Math.floor(Math.random() * 45) + 5, // Random between 5-50
+      isToday: index === dayOfWeek
+    }));
+  };
+  
+  // Handle starting today's challenge
+  const handleStartChallenge = () => {
+    if (todayChallenge) {
+      router.push(`/dashboard/learn?challengeId=${todayChallenge.id}`);
+    }
+  };
+  
+  // Handle creating a new challenge
+  const handleNewChallenge = () => {
+    router.push('/dashboard/challenges/create');
+  };
+  
   if (isLoading) {
     return <LoadingScreen />;
+  }
+  
+  if (error) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <div className="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
+          <h1 className="text-2xl font-bold text-red-600 mb-4">Error Loading Dashboard</h1>
+          <p className="text-slate-600 mb-6">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="w-full bg-gradient-to-r from-cyan-500 to-teal-500 text-white py-3 px-6 rounded-lg font-medium shadow-md"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
   }
   
   return (
@@ -119,21 +232,27 @@ export default function Dashboard() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-800">
-                こんにちは, <span className="text-cyan-600">{profile.username}</span>!
+                こんにちは, <span className="text-cyan-600">{profile?.username || 'Learner'}</span>!
               </h1>
               <p className="text-slate-500">Your learning adventure continues...</p>
             </div>
           </div>
           
           <div className="flex space-x-3">
-            <button className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg flex items-center shadow-sm transition-colors">
+            <button 
+              className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg flex items-center shadow-sm transition-colors"
+              onClick={() => router.push('/dashboard')}
+            >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1 text-slate-400" viewBox="0 0 20 20" fill="currentColor">
                 <path d="M5 3a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2V5a2 2 0 00-2-2H5zM5 11a2 2 0 00-2 2v2a2 2 0 002 2h2a2 2 0 002-2v-2a2 2 0 00-2-2H5zM11 5a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V5zM11 13a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
               </svg>
               <span>Dashboard</span>
             </button>
             
-            <button className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white px-4 py-2 rounded-lg flex items-center shadow-md transition-all transform hover:translate-y-[-2px]">
+            <button 
+              className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white px-4 py-2 rounded-lg flex items-center shadow-md transition-all transform hover:translate-y-[-2px]"
+              onClick={handleNewChallenge}
+            >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
               </svg>
@@ -150,10 +269,37 @@ export default function Dashboard() {
             {/* Left column */}
             <div className="lg:col-span-2 space-y-6">
               {/* Today's Challenge Card */}
-              <TodaysChallenge challenge={todayChallenge} />
+              {todayChallenge ? (
+                <TodaysChallenge challenge={todayChallenge} onStart={handleStartChallenge} />
+              ) : (
+                <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                  <div className="border-b border-slate-100 bg-gradient-to-r from-cyan-50 to-teal-50 px-6 py-4">
+                    <h2 className="text-xl font-bold text-slate-800">No Active Challenges</h2>
+                  </div>
+                  <div className="p-6">
+                    <p className="text-slate-600 mb-6">
+                      You don't have any active challenges yet. Start a new challenge to begin your language learning journey!
+                    </p>
+                    <button 
+                      onClick={handleNewChallenge}
+                      className="w-full bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white py-3 px-6 rounded-lg font-medium shadow-md transition-all transform hover:translate-y-[-2px] flex items-center justify-center"
+                    >
+                      Create Your First Challenge
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              )}
               
               {/* My Learning Stats */}
-              <LearningStats stats={profile.stats} />
+              <LearningStats stats={profile?.stats || {
+                totalMinutesPracticed: 0,
+                vocabularySize: 0,
+                currentStreak: 0,
+                longestStreak: 0
+              }} />
               
               {/* Progress Charts */}
               <ActivityChart data={activityData} />
@@ -165,7 +311,11 @@ export default function Dashboard() {
               <UserProfileCard profile={profile} />
               
               {/* Active Challenges */}
-              <ActiveChallenges challenges={activeChallenges} />
+              <ActiveChallenges 
+                challenges={activeChallenges} 
+                onViewChallenge={(id) => router.push(`/dashboard/challenges/${id}`)}
+                onViewAll={() => router.push('/dashboard/challenges')}
+              />
             </div>
           </div>
           
@@ -173,7 +323,7 @@ export default function Dashboard() {
           <div className="mt-8">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-slate-800">Your Learning Path</h2>
-              <Link href="/dashboard/path" className="text-cyan-600 hover:text-cyan-700 flex items-center">
+              <Link href="/dashboard/learn" className="text-cyan-600 hover:text-cyan-700 flex items-center">
                 View All
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
                   <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
@@ -182,7 +332,23 @@ export default function Dashboard() {
             </div>
             
             <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
-              <LearningPath language="ja" level="INTERMEDIATE" />
+              {profile?.learningLanguages?.length > 0 ? (
+                <LearningPath 
+                  language={profile.learningLanguages[0].languageCode} 
+                  level={profile.learningLanguages[0].proficiencyLevel} 
+                  onSelectLesson={(lessonId) => router.push(`/dashboard/learn/${lessonId}`)}
+                />
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-slate-500 mb-4">You haven't set up your learning languages yet.</p>
+                  <Link 
+                    href="/dashboard/profile" 
+                    className="inline-block bg-gradient-to-r from-cyan-500 to-teal-500 text-white px-4 py-2 rounded-lg"
+                  >
+                    Update Profile
+                  </Link>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -209,7 +375,7 @@ export default function Dashboard() {
               </Link>
             </li>
             <li className="relative">
-              <Link href="/dashboard/practice" className="flex flex-col items-center text-slate-700">
+              <Link href="/dashboard/learn" className="flex flex-col items-center text-slate-700">
                 <div className="absolute -top-10 bg-gradient-to-r from-cyan-500 to-teal-500 rounded-full p-3 shadow-lg">
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -280,7 +446,7 @@ function RobotAvatar({ size = "medium" }) {
 }
 
 // Today's Challenge Component
-function TodaysChallenge({ challenge }) {
+function TodaysChallenge({ challenge, onStart }) {
   const getLanguageFlag = (code) => {
     const flags = {
       ja: "🇯🇵",
@@ -313,7 +479,10 @@ function TodaysChallenge({ challenge }) {
           <p className="text-slate-600">{challenge.exercise}</p>
         </div>
         
-        <button className="w-full bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white py-3 px-6 rounded-lg font-medium shadow-md transition-all transform hover:translate-y-[-2px] flex items-center justify-center">
+        <button 
+          onClick={onStart}
+          className="w-full bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white py-3 px-6 rounded-lg font-medium shadow-md transition-all transform hover:translate-y-[-2px] flex items-center justify-center"
+        >
           Start Today's Challenge
           <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 ml-2" viewBox="0 0 20 20" fill="currentColor">
             <path fillRule="evenodd" d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
@@ -324,7 +493,7 @@ function TodaysChallenge({ challenge }) {
   );
 }
 
-// Learning Stats Component
+// Learning Stats Component (continued)
 function LearningStats({ stats }) {
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -341,7 +510,7 @@ function LearningStats({ stats }) {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard 
             title="Total Practice" 
-            value={`${stats.totalMinutesPracticed} min`} 
+            value={`${stats.totalMinutesPracticed || 0} min`} 
             icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>}
@@ -350,7 +519,7 @@ function LearningStats({ stats }) {
           
           <StatCard 
             title="Vocabulary" 
-            value={`${stats.vocabularySize} words`} 
+            value={`${stats.vocabularySize || 0} words`} 
             icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
             </svg>}
@@ -359,7 +528,7 @@ function LearningStats({ stats }) {
           
           <StatCard 
             title="Current Streak" 
-            value={`${stats.currentStreak} days`} 
+            value={`${stats.currentStreak || 0} days`} 
             icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>}
@@ -368,7 +537,7 @@ function LearningStats({ stats }) {
           
           <StatCard 
             title="Longest Streak" 
-            value={`${stats.longestStreak} days`} 
+            value={`${stats.longestStreak || 0} days`} 
             icon={<svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" />
             </svg>}
@@ -410,7 +579,7 @@ function StatCard({ title, value, icon, color }) {
 // Activity Chart Component
 function ActivityChart({ data }) {
   // Find max value for scaling
-  const maxMinutes = Math.max(...data.map(d => d.minutes));
+  const maxMinutes = Math.max(...data.map(d => d.minutes), 10); // Min of 10 for scale
   
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -429,8 +598,8 @@ function ActivityChart({ data }) {
             <div key={index} className="flex flex-col items-center">
               <div 
                 className={`w-10 rounded-t-md relative ${
-                  // Highlight today (Wed)
-                  item.day === 'Wed' 
+                  // Highlight today
+                  item.isToday
                     ? 'bg-gradient-to-t from-cyan-400 to-teal-400 border-2 border-amber-400' 
                     : 'bg-gradient-to-t from-cyan-400 to-teal-400 opacity-70'
                 }`} 
@@ -441,7 +610,7 @@ function ActivityChart({ data }) {
                   {item.minutes}min
                 </div>
               </div>
-              <div className={`text-xs mt-2 ${item.day === 'Wed' ? 'font-bold text-slate-800' : 'text-slate-500'}`}>
+              <div className={`text-xs mt-2 ${item.isToday ? 'font-bold text-slate-800' : 'text-slate-500'}`}>
                 {item.day}
               </div>
             </div>
@@ -497,17 +666,30 @@ function UserProfileCard({ profile }) {
     return colors[level] || 'bg-slate-100 text-slate-800';
   };
   
+  if (!profile) {
+    return (
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden p-6 animate-pulse">
+        <div className="h-16 bg-slate-200 rounded mb-4"></div>
+        <div className="h-4 bg-slate-200 rounded w-1/2 mb-6"></div>
+        <div className="space-y-3">
+          <div className="h-12 bg-slate-200 rounded"></div>
+          <div className="h-12 bg-slate-200 rounded"></div>
+        </div>
+      </div>
+    );
+  }
+  
   return (
-<div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div className="bg-gradient-to-r from-cyan-400 to-teal-500 px-6 py-4">
         <div className="flex items-center">
           <div className="w-12 h-12 bg-white rounded-full mr-3 flex items-center justify-center text-xl font-bold text-cyan-600 shadow-md">
-            {profile.username.charAt(0)}
+            {profile.username?.charAt(0) || 'U'}
           </div>
           <div>
-            <h2 className="text-lg font-bold text-white">{profile.username}</h2>
+            <h2 className="text-lg font-bold text-white">{profile.username || 'User'}</h2>
             <p className="text-cyan-100 text-sm">
-              {profile.walletAddress.slice(0, 6)}...{profile.walletAddress.slice(-4)}
+              {profile.walletAddress ? `${profile.walletAddress.slice(0, 6)}...${profile.walletAddress.slice(-4)}` : 'Connect Wallet'}
             </p>
           </div>
         </div>
@@ -515,31 +697,41 @@ function UserProfileCard({ profile }) {
       
       <div className="p-6">
         <h3 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-3">Learning Languages</h3>
-        <div className="space-y-3 mb-6">
-          {profile.learningLanguages.map((lang) => (
-            <div key={lang.id} className="flex justify-between items-center bg-slate-50 rounded-lg p-3 border border-slate-100">
-              <div className="flex items-center">
-                <span className="mr-2 text-lg">
-                  {lang.languageCode === 'ja' ? '🇯🇵' : 
-                   lang.languageCode === 'ko' ? '🇰🇷' : 
-                   lang.languageCode === 'zh' ? '🇨🇳' : 
-                   lang.languageCode === 'en' ? '🇬🇧' : 
-                   lang.languageCode === 'es' ? '🇪🇸' : 
-                   lang.languageCode === 'fr' ? '🇫🇷' : 
-                   lang.languageCode === 'de' ? '🇩🇪' : 
-                   lang.languageCode === 'it' ? '🇮🇹' : 
-                   lang.languageCode === 'ru' ? '🇷🇺' : '🌐'}
+        {profile.learningLanguages && profile.learningLanguages.length > 0 ? (
+          <div className="space-y-3 mb-6">
+            {profile.learningLanguages.map((lang) => (
+              <div key={lang.id || lang.languageCode} className="flex justify-between items-center bg-slate-50 rounded-lg p-3 border border-slate-100">
+                <div className="flex items-center">
+                  <span className="mr-2 text-lg">
+                    {lang.languageCode === 'ja' ? '🇯🇵' : 
+                     lang.languageCode === 'ko' ? '🇰🇷' : 
+                     lang.languageCode === 'zh' ? '🇨🇳' : 
+                     lang.languageCode === 'en' ? '🇬🇧' : 
+                     lang.languageCode === 'es' ? '🇪🇸' : 
+                     lang.languageCode === 'fr' ? '🇫🇷' : 
+                     lang.languageCode === 'de' ? '🇩🇪' : 
+                     lang.languageCode === 'it' ? '🇮🇹' : 
+                     lang.languageCode === 'ru' ? '🇷🇺' : '🌐'}
+                  </span>
+                  <span className="font-medium text-slate-700">{getLanguageName(lang.languageCode)}</span>
+                </div>
+                <span className={`text-xs px-2 py-1 rounded-full ${getLevelColor(lang.proficiencyLevel)}`}>
+                  {getLevelName(lang.proficiencyLevel)}
                 </span>
-                <span className="font-medium text-slate-700">{getLanguageName(lang.languageCode)}</span>
               </div>
-              <span className={`text-xs px-2 py-1 rounded-full ${getLevelColor(lang.proficiencyLevel)}`}>
-                {getLevelName(lang.proficiencyLevel)}
-              </span>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-slate-50 rounded-lg p-4 mb-6 border border-slate-100 text-center">
+            <p className="text-slate-500 mb-2">No learning languages set up yet.</p>
+            <Link href="/dashboard/profile" className="text-cyan-600 hover:text-cyan-700 font-medium">
+              Update Profile
+            </Link>
+          </div>
+        )}
         
         <h3 className="text-sm font-medium text-slate-500 uppercase tracking-wider mb-3">Achievements</h3>
+        {/* We'll fetch real achievements later, for now showing placeholder badges */}
         <div className="flex flex-wrap gap-2 mb-6">
           <div className="w-10 h-10 bg-gradient-to-br from-amber-400 to-amber-500 rounded-full flex items-center justify-center shadow-sm" title="5-Day Streak">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">
@@ -556,12 +748,6 @@ function UserProfileCard({ profile }) {
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
           </div>
-          <div className="w-10 h-10 bg-gradient-to-br from-violet-400 to-violet-500 rounded-full flex items-center justify-center shadow-sm" title="Early Adopter">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-white" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M11 17a1 1 0 001.447.894l4-2A1 1 0 0017 15V9.236a1 1 0 00-1.447-.894l-4 2a1 1 0 00-.553.894V17zM15.211 6.276a1 1 0 000-1.788l-4.764-2.382a1 1 0 00-.894 0L4.789 4.488a1 1 0 000 1.788l4.764 2.382a1 1 0 00.894 0l4.764-2.382zM4.447 8.342A1 1 0 003 9.236V15a1 1 0 00.553.894l4 2A1 1 0 009 17v-5.764a1 1 0 00-.553-.894l-4-2z" />
-            </svg>
-          </div>
-          <div className="w-10 h-10 bg-gradient-to-br from-slate-400 to-slate-500 rounded-full flex items-center justify-center text-xs text-white font-bold shadow-sm" title="More achievements">+3</div>
         </div>
         
         <Link href="/dashboard/profile" className="block text-center bg-gradient-to-r from-slate-500 to-slate-600 hover:from-slate-600 hover:to-slate-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm">
@@ -573,7 +759,7 @@ function UserProfileCard({ profile }) {
 }
 
 // Active Challenges Component
-function ActiveChallenges({ challenges }) {
+function ActiveChallenges({ challenges, onViewChallenge, onViewAll }) {
   const getLanguageFlag = (code) => {
     const flags = {
       ja: "🇯🇵",
@@ -610,59 +796,78 @@ function ActiveChallenges({ challenges }) {
       </div>
       
       <div className="p-6">
-        <div className="space-y-4">
-          {challenges.map((challenge) => (
-            <div key={challenge.id} className="bg-slate-50 rounded-lg border border-slate-100 p-4 hover:shadow-md transition-shadow">
-              <div className="flex justify-between items-start">
-                <div className="flex items-start">
-                  <span className="text-2xl mr-3 mt-1">{getLanguageFlag(challenge.languageCode)}</span>
-                  <div>
-                    <h3 className="font-medium text-slate-800">{challenge.title}</h3>
-                    <div className="flex items-center mt-1">
-                      <span className="text-xs px-2 py-0.5 bg-cyan-100 text-cyan-800 rounded-full">
-                        {challenge.daysLeft} days left
-                      </span>
-                      <span className="mx-2 text-slate-300">•</span>
-                      <span className="text-xs text-slate-500">
-                        {challenge.dailyRequirement} min/day
-                      </span>
+        {challenges.length > 0 ? (
+          <div className="space-y-4">
+            {challenges.map((challenge) => (
+              <div 
+                key={challenge.id} 
+                className="bg-slate-50 rounded-lg border border-slate-100 p-4 hover:shadow-md transition-shadow cursor-pointer"
+                onClick={() => onViewChallenge(challenge.id)}
+              >
+                <div className="flex justify-between items-start">
+                  <div className="flex items-start">
+                    <span className="text-2xl mr-3 mt-1">{getLanguageFlag(challenge.languageCode)}</span>
+                    <div>
+                      <h3 className="font-medium text-slate-800">{challenge.title}</h3>
+                      <div className="flex items-center mt-1">
+                        <span className="text-xs px-2 py-0.5 bg-cyan-100 text-cyan-800 rounded-full">
+                          {challenge.daysLeft} days left
+                        </span>
+                        <span className="mx-2 text-slate-300">•</span>
+                        <span className="text-xs text-slate-500">
+                          {challenge.dailyRequirement} min/day
+                        </span>
+                      </div>
                     </div>
                   </div>
+                  <div className="flex flex-col items-end">
+                    <span className="text-sm font-medium px-2 py-1 bg-amber-100 text-amber-800 rounded-full">
+                      {formatCurrency(challenge.stakeAmount)}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-col items-end">
-                  <span className="text-sm font-medium px-2 py-1 bg-amber-100 text-amber-800 rounded-full">
-                    {formatCurrency(challenge.stakeAmount)}
-                  </span>
+                
+                <div className="mt-4">
+                  <div className="flex justify-between text-sm text-slate-500 mb-1">
+                    <span>Progress</span>
+                    <span className="font-medium text-slate-700">{challenge.progress}%</span>
+                  </div>
+                  <div className="w-full bg-slate-200 rounded-full h-2">
+                    <div 
+                      className="bg-gradient-to-r from-cyan-400 to-teal-500 h-2 rounded-full" 
+                      style={{ width: `${challenge.progress}%` }}
+                    ></div>
+                  </div>
                 </div>
               </div>
-              
-              <div className="mt-4">
-                <div className="flex justify-between text-sm text-slate-500 mb-1">
-                  <span>Progress</span>
-                  <span className="font-medium text-slate-700">{challenge.progress}%</span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-2">
-                  <div 
-                    className="bg-gradient-to-r from-cyan-400 to-teal-500 h-2 rounded-full" 
-                    style={{ width: `${challenge.progress}%` }}
-                  ></div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-6 bg-slate-50 rounded-lg border border-slate-100">
+            <p className="text-slate-500 mb-4">You don't have any active challenges yet.</p>
+            <button 
+              onClick={() => onViewAll()}
+              className="px-4 py-2 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 transition-colors"
+            >
+              Browse Challenges
+            </button>
+          </div>
+        )}
         
-        <Link href="/dashboard/challenges" className="block text-center bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white px-4 py-2 rounded-lg mt-4 transition-colors shadow-md">
+        <button 
+          onClick={onViewAll}
+          className="block w-full text-center bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white px-4 py-2 rounded-lg mt-4 transition-colors shadow-md"
+        >
           View All Challenges
-        </Link>
+        </button>
       </div>
     </div>
   );
 }
 
 // Learning Path Component
-function LearningPath({ language, level }) {
-  // Sample learning path data
+function LearningPath({ language, level, onSelectLesson }) {
+  // Sample learning path data - in a real implementation, this would be fetched from the API
   const pathData = [
     { id: 1, title: "Greetings and Introductions", completed: true },
     { id: 2, title: "Basic Conversation", completed: true },
@@ -741,14 +946,17 @@ function LearningPath({ language, level }) {
                 
                 {!item.locked && (
                   <div className="mt-2">
-                    <Link href={`/dashboard/learn/${item.id}`} className={`text-sm ${
-                      item.current ? 'text-amber-600 hover:text-amber-700' : 'text-cyan-600 hover:text-cyan-700'
-                    } hover:underline flex items-center font-medium`}>
+                    <button 
+                      onClick={() => onSelectLesson(item.id)}
+                      className={`text-sm ${
+                        item.current ? 'text-amber-600 hover:text-amber-700' : 'text-cyan-600 hover:text-cyan-700'
+                      } hover:underline flex items-center font-medium`}
+                    >
                       {item.completed ? 'Review' : 'Start'} Lesson
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 ml-1" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
                       </svg>
-                    </Link>
+                    </button>
                   </div>
                 )}
               </div>

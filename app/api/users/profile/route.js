@@ -1,11 +1,10 @@
-// File: app/api/users/profile/route.js
+// app/api/users/profile/route.js
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { verifyAuth } from '@/lib/auth/verify';
 
 const prisma = new PrismaClient();
 
-// Get user profile
 export async function GET(request) {
   const auth = await verifyAuth();
   
@@ -40,6 +39,7 @@ export async function GET(request) {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
+
 
 // Update user profile
 export async function PUT(request) {
