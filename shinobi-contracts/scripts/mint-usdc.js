@@ -2,10 +2,7 @@
 const hre = require("hardhat");
 
 async function main() {
-  const [signer] = await ethers.getSigners();
-  const signerAddress = await signer.getAddress();
-  
-  // Replace with your deployed MockUSDC address
+  // Load from .env
   const mockUSDCAddress = process.env.USDC_CONTRACT_ADDRESS;
   
   if (!mockUSDCAddress) {
@@ -13,21 +10,23 @@ async function main() {
     process.exit(1);
   }
   
+  const [signer] = await ethers.getSigners();
+  const signerAddress = await signer.getAddress();
+  
   console.log("Minting USDC to:", signerAddress);
   
   // Get contract instance
   const MockUSDC = await hre.ethers.getContractFactory("MockUSDC");
-  const mockUSDC = await MockUSDC.attach(mockUSDCAddress);
-  
-  // Mint 1000 USDC to your wallet
-  const amount = ethers.utils.parseUnits("1000", 6); // 1000 USDC with 6 decimals
+  const mockUSDC = MockUSDC.attach(mockUSDCAddress);
   
   // Check current balance
   const balanceBefore = await mockUSDC.balanceOf(signerAddress);
   console.log(`Current USDC balance: ${ethers.utils.formatUnits(balanceBefore, 6)} USDC`);
   
-  // Mint tokens
+  // Mint 1000 USDC to your wallet
+  const amount = ethers.utils.parseUnits("1000", 6); // 1000 USDC with 6 decimals
   console.log(`Minting ${ethers.utils.formatUnits(amount, 6)} USDC...`);
+  
   const tx = await mockUSDC.mint(signerAddress, amount);
   console.log("Transaction submitted:", tx.hash);
   

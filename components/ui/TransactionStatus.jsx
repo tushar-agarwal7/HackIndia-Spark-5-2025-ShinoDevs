@@ -1,34 +1,40 @@
 // components/ui/TransactionStatus.jsx
 import { useState, useEffect } from 'react';
 
-export default function TransactionStatus({ 
-  txHash, 
-  status, 
-  network = 'polygon', 
+export default function TransactionStatus({
+  txHash,
+  status,
+  network = 'polygon',
   message,
   onClose
 }) {
   const [explorerLink, setExplorerLink] = useState('');
-  
+
   useEffect(() => {
     if (txHash) {
       // Set the appropriate block explorer URL based on network
-      const baseUrl = 
+      const baseUrl =
         network === 'ethereum' ? 'https://etherscan.io/tx/' :
         network === 'polygon' ? 'https://polygonscan.com/tx/' :
         network === 'mumbai' ? 'https://mumbai.polygonscan.com/tx/' :
+        network === 'localhost' ? '' : // No block explorer for localhost
         'https://polygonscan.com/tx/'; // Default to polygon
       
-      setExplorerLink(`${baseUrl}${txHash}`);
+      // If using localhost, don't set an explorer link
+      if (network === 'localhost') {
+        setExplorerLink('');
+      } else {
+        setExplorerLink(`${baseUrl}${txHash}`);
+      }
     }
   }, [txHash, network]);
-  
-  const statusColor = 
+
+  const statusColor =
     status === 'success' ? 'text-green-600 bg-green-50 border-green-200' :
     status === 'pending' ? 'text-yellow-600 bg-yellow-50 border-yellow-200' :
     'text-red-600 bg-red-50 border-red-200';
-  
-  const statusIcon = 
+
+  const statusIcon =
     status === 'success' ? (
       <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -42,7 +48,7 @@ export default function TransactionStatus({
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
       </svg>
     );
-  
+
   return (
     <div className={`rounded-md border p-4 ${statusColor}`}>
       <div className="flex">
@@ -52,27 +58,34 @@ export default function TransactionStatus({
         <div className="ml-3 flex-1">
           <h3 className="text-md font-medium">
             {status === 'success' ? 'Transaction Successful' :
-             status === 'pending' ? 'Transaction Pending' :
-             'Transaction Failed'}
+            status === 'pending' ? 'Transaction Pending' :
+            'Transaction Failed'}
           </h3>
           {message && <p className="mt-1 text-sm">{message}</p>}
-          {txHash && (
+          {txHash && explorerLink && (
             <div className="mt-2">
-              <a 
-                href={explorerLink} 
-                target="_blank" 
-                rel="noopener noreferrer" 
+              <a
+                href={explorerLink}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-sm font-medium underline"
               >
                 View on Block Explorer
               </a>
             </div>
           )}
+          {txHash && !explorerLink && network === 'localhost' && (
+            <div className="mt-2">
+              <span className="text-sm">
+                Transaction ID: {txHash.substring(0, 10)}...
+              </span>
+            </div>
+          )}
         </div>
         {onClose && (
-          <button 
-            type="button" 
-            className="ml-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-500 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 inline-flex h-8 w-8" 
+          <button
+            type="button"
+            className="ml-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-500 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 inline-flex h-8 w-8"
             onClick={onClose}
           >
             <span className="sr-only">Close</span>

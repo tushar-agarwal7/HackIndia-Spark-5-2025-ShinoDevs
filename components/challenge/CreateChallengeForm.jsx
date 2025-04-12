@@ -45,9 +45,10 @@ export default function CreateChallengeForm() {
     connectWallet, 
     isLoading: isContractLoading, 
     checkNetwork,
-    switchToMumbai,
+    switchToLocalNetwork,
     networkName,
-    chainId
+    chainId,
+    signer
   } = useContract();
   
   const [formData, setFormData] = useState({
@@ -202,13 +203,13 @@ export default function CreateChallengeForm() {
     
     if (!isCorrectNetwork) {
       try {
-        const switched = await switchToMumbai();
+        const switched = await switchToLocalNetwork();
         if (!switched) {
-          setError('Please switch to Mumbai Testnet to create a challenge');
+          setError('Please switch to Localhost network to create a challenge');
           return;
         }
       } catch (networkError) {
-        setError('Failed to switch to Mumbai Testnet. Please switch manually in your wallet.');
+        setError('Failed to switch to Localhost network. Please switch manually in your wallet.');
         return;
       }
     }
@@ -300,7 +301,7 @@ export default function CreateChallengeForm() {
         ...formData,
         transactionHash,
         contractAddress,
-        contractChain: 'polygon' // Or use environment config to determine chain
+        contractChain: 'localhost' // Changed from 'polygon' to 'localhost'
       };
       
       const response = await fetch('/api/challenges/create', {
@@ -356,13 +357,13 @@ export default function CreateChallengeForm() {
             <div className="ml-3">
               <h3 className="text-sm font-medium">Wrong Network Detected</h3>
               <p className="text-sm mt-1">
-                You are currently on {networkName || 'an unsupported network'}. Please switch to Mumbai Testnet to create challenges.
+                You are currently on {networkName || 'an unsupported network'}. Please switch to Localhost network to create challenges.
               </p>
               <button
-                onClick={switchToMumbai}
+                onClick={switchToLocalNetwork}
                 className="mt-2 px-3 py-1 text-sm bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200"
               >
-                Switch to Mumbai
+                Switch to Localhost
               </button>
             </div>
           </div>
@@ -371,7 +372,7 @@ export default function CreateChallengeForm() {
     }
     return null;
   };
-  
+
   // Render the form step
   const renderForm = () => (
     <form onSubmit={handleSubmit} className="space-y-6">

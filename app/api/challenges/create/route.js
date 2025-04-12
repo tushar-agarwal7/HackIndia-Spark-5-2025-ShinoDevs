@@ -96,7 +96,7 @@ export async function POST(request) {
       await prisma.transaction.create({
         data: {
           userId: auth.userId,
-          transactionType: 'CONTRACT_REGISTRATION',
+          transactionType: 'STAKE',
           amount: 0, // No amount for registration
           currency: contractChain === 'polygon' || contractChain === 'mumbai' ? 'MATIC' : 'ETH', // Gas fee currency
           txHash: body.transactionHash,

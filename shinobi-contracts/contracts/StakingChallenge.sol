@@ -1,4 +1,3 @@
-// contracts/StakingChallenge.sol
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
@@ -181,7 +180,6 @@ contract StakingChallenge is Ownable, ReentrancyGuard {
         _removeActiveChallenge(user, challengeId);
         
         // For hardcore challenges, the stake is forfeited (stays in contract)
-        // No token transfer needed
         
         emit ChallengeFailed(user, challengeId);
     }
@@ -213,6 +211,22 @@ contract StakingChallenge is Ownable, ReentrancyGuard {
     }
     
     /**
+     * @dev Helper function to remove a challenge from user's active challenges
+     */
+    function _removeActiveChallenge(address user, string memory challengeId) internal {
+        string[] storage activeChallenges = userActiveChallenges[user];
+        
+        for (uint256 i = 0; i < activeChallenges.length; i++) {
+            if (keccak256(bytes(activeChallenges[i])) == keccak256(bytes(challengeId))) {
+                // Replace with the last element and pop
+                activeChallenges[i] = activeChallenges[activeChallenges.length - 1];
+                activeChallenges.pop();
+                break;
+            }
+        }
+    }
+    
+    /**
      * @dev Allows owner to withdraw yield for protocol fees/operations
      * @param amount The amount of USDC to withdraw
      */
@@ -233,22 +247,6 @@ contract StakingChallenge is Ownable, ReentrancyGuard {
         require(msg.sender == challenge.creator || msg.sender == owner(), "Only creator or owner can deactivate");
         
         challenge.isActive = false;
-    }
-    
-    /**
-     * @dev Helper function to remove a challenge from user's active challenges
-     */
-    function _removeActiveChallenge(address user, string memory challengeId) internal {
-        string[] storage activeChallenges = userActiveChallenges[user];
-        
-        for (uint256 i = 0; i < activeChallenges.length; i++) {
-            if (keccak256(bytes(activeChallenges[i])) == keccak256(bytes(challengeId))) {
-                // Replace with the last element and pop
-                activeChallenges[i] = activeChallenges[activeChallenges.length - 1];
-                activeChallenges.pop();
-                break;
-            }
-        }
     }
     
     /**
