@@ -74,14 +74,25 @@ app/
         route.js
       user/
         route.js
+      route.js
     conversation/
       evaluate/
+        route.js
+      route.js
+    notifications/
+      [id]/
+        route.js
+      read-all/
+        route.js
+      unread-count/
         route.js
       route.js
     users/
       activity/
         route.js
       analytics/
+        route.js
+      language-stats/
         route.js
       profile/
         route.js
@@ -115,11 +126,14 @@ components/
   dashboard/
     ChallengeCard.jsx
     LanguageStats.jsx
+    PracticeChart.jsx
     RecentActivity.jsx
   layout/
     DashboardLayout.jsx
   learn/
     ConversationInterface.jsx
+  notifications/
+    NotificationCenter.jsx
   ui/
     button.jsx
     EmptyState.jsx
@@ -142,6 +156,7 @@ lib/
     hooks/
       useContract.js
       useStaking.js
+      useYield.js
     providers.js
     staking.js
   utils.js
@@ -458,7 +473,7 @@ export async function POST(request, { params }) {
     await prisma.transaction.create({
       data: {
         userId: auth.userId,
-        transactionType: 'CONTRACT_REGISTRATION',
+        transactionType: 'STAKE',
         amount: 0, // No amount for registration
         currency: 'MATIC', // Gas fee currency
         txHash: transactionHash,
@@ -489,7 +504,7 @@ const prisma = new PrismaClient();
 
 export async function GET(request, { params }) {
   try {
-    const { id } = params;
+    const { id } = await params;
     
     if (!id) {
       return NextResponse.json({ error: 'Challenge ID is required' }, { status: 400 });
@@ -576,11 +591,12 @@ export async function GET(request, { params }) {
 ================
 File: app/api/challenges/complete/route.js
 ================
-// app/api/challenges/complete/route.js - Enhanced version
+// app/api/challenges/complete/route.js
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { verifyAuth } from '@/lib/auth/verify';
-import { processRewardDistribution } from '@/lib/web3/staking';
+import { ethers } from 'ethers';
+import stakingABI from '@/lib/web3/abis/stakingABI.json';
 
 const prisma = new PrismaClient();
 
@@ -598,155 +614,187 @@ export async function POST(request) {
     if (!userChallengeId) {
       return NextResponse.json({ error: 'User challenge ID is required' }, { status: 400 });
     }
-    // Get user challenge
-const userChallenge = await prisma.userChallenge.findUnique({
-  where: { 
-    id: userChallengeId,
-    userId: auth.userId, // Ensure the challenge belongs to the authenticated user
-    status: 'ACTIVE'
-  },
-  include: {
-    challenge: true,
-    dailyProgress: true
-  }
-});
-
-if (!userChallenge) {
-  return NextResponse.json({ error: 'Challenge not found or already completed' }, { status: 404 });
-}
-
-// Log the challenge completion request for audit purposes
-console.log(`Challenge completion request: ${userChallengeId} by user ${auth.userId}`);
-
-// Check completion criteria
-const totalDays = userChallenge.challenge.durationDays;
-const completedDays = userChallenge.dailyProgress.filter(p => p.completed).length;
-
-// For simplicity, we'll say a challenge is complete if the user has completed at least 80% of the days
-const completionThreshold = Math.floor(totalDays * 0.8);
-
-if (completedDays < completionThreshold) {
-  return NextResponse.json({ 
-    error: `Challenge not yet complete. You've completed ${completedDays} days out of ${totalDays} required.`,
-    completedDays,
-    totalDays,
-    completionThreshold
-  }, { status: 400 });
-}
-
-// Calculate reward amount
-const rewardAmount = userChallenge.stakedAmount * (1 + userChallenge.challenge.yieldPercentage / 100);
-
-// Set the transaction status to pending while we process blockchain transaction
-await prisma.userChallenge.update({
-  where: { id: userChallengeId },
-  data: {
-    status: 'PENDING_COMPLETION'
-  }
-});
-
-// Handle blockchain transaction
-const transaction = await processRewardDistribution(
-  userChallengeId,
-  auth.userId,
-  auth.walletAddress,
-  rewardAmount
-);
-
-if (!transaction.success) {
-  // Record the failure but allow retry
-  await prisma.transaction.create({
-    data: {
-      userId: auth.userId,
-      transactionType: 'REWARD',
-      amount: rewardAmount,
-      currency: 'USDC',
-      txHash: null,
-      status: 'FAILED',
-      createdAt: new Date()
-    }
-  });
-  
-  return NextResponse.json({ 
-    error: transaction.error || 'Transaction failed',
-    retryable: true 
-  }, { status: 500 });
-}
-
-// Update user challenge status
-const updatedChallenge = await prisma.userChallenge.update({
-  where: { id: userChallengeId },
-  data: {
-    status: 'COMPLETED',
-    completionTxHash: transaction.transactionHash,
-    progressPercentage: 100
-  }
-});
-
-// Create transaction record
-await prisma.transaction.create({
-  data: {
-    userId: auth.userId,
-    transactionType: 'REWARD',
-    amount: rewardAmount,
-    currency: 'USDC',
-    txHash: transaction.transactionHash,
-    status: 'COMPLETED',
-    completedAt: new Date()
-  }
-});
-
-// Create achievement if this is the user's first completed challenge
-const completedChallengesCount = await prisma.userChallenge.count({
-  where: {
-    userId: auth.userId,
-    status: 'COMPLETED'
-  }
-});
-
-if (completedChallengesCount === 1) {
-  // Find the "First Challenge Completed" achievement
-  const achievement = await prisma.achievement.findFirst({
-    where: { achievementType: 'CHALLENGE_COMPLETED', threshold: 1 }
-  });
-  
-  if (achievement) {
-    await prisma.userAchievement.create({
-      data: {
-        userId: auth.userId,
-        achievementId: achievement.id
+    
+    // Get user challenge with related challenge info
+    const userChallenge = await prisma.userChallenge.findUnique({
+      where: { 
+        id: userChallengeId,
+        userId: auth.userId, // Ensure the challenge belongs to the authenticated user
+        status: 'ACTIVE'
+      },
+      include: {
+        challenge: true,
+        dailyProgress: true,
+        user: true
       }
     });
-  }
-}
 
-// Create notification
-await prisma.notification.create({
-  data: {
-    userId: auth.userId,
-    type: 'CHALLENGE_COMPLETED',
-    title: 'Challenge Completed!',
-    message: `Congratulations! You've completed the "${userChallenge.challenge.title}" challenge and earned ${rewardAmount.toFixed(2)} USDC.`,
-    read: false
-  }
-});
+    if (!userChallenge) {
+      return NextResponse.json({ error: 'Challenge not found or already completed' }, { status: 404 });
+    }
 
-return NextResponse.json({
-  success: true,
-  challenge: updatedChallenge,
-  reward: rewardAmount,
-  transactionHash: transaction.transactionHash
-});
-} catch (error) {
-  console.error('Error completing challenge:', error);
-  return NextResponse.json({ error: 'Failed to complete challenge' }, { status: 500 });
-}
+    // Log the challenge completion request for audit purposes
+    console.log(`Challenge completion request: ${userChallengeId} by user ${auth.userId}`);
+
+    // Check completion criteria
+    const totalDays = userChallenge.challenge.durationDays;
+    const completedDays = userChallenge.dailyProgress.filter(p => p.completed).length;
+
+    // For simplicity, we'll say a challenge is complete if the user has completed at least 80% of the days
+    const completionThreshold = Math.floor(totalDays * 0.8);
+
+    if (completedDays < completionThreshold) {
+      return NextResponse.json({ 
+        error: `Challenge not yet complete. You've completed ${completedDays} days out of ${totalDays} required.`,
+        completedDays,
+        totalDays,
+        completionThreshold
+      }, { status: 400 });
+    }
+
+    // Calculate reward amount
+    const rewardAmount = userChallenge.stakedAmount * (1 + userChallenge.challenge.yieldPercentage / 100);
+
+    // Set the transaction status to pending while we process blockchain transaction
+    await prisma.userChallenge.update({
+      where: { id: userChallengeId },
+      data: {
+        status: 'PENDING_COMPLETION'
+      }
+    });
+
+    // Process blockchain transaction
+    let transactionHash = null;
+    
+    try {
+      // Initialize ethereum provider
+      const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_RPC_URL);
+      
+      // Initialize admin wallet
+      const adminWallet = new ethers.Wallet(process.env.ADMIN_PRIVATE_KEY, provider);
+      
+      // Initialize staking contract with admin signer
+      const stakingContract = new ethers.Contract(
+        process.env.NEXT_PUBLIC_STAKING_CONTRACT_ADDRESS,
+        stakingABI,
+        adminWallet
+      );
+      
+      // Calculate yield percentage in basis points (1/100 of percent)
+      const yieldBps = Math.round(userChallenge.challenge.yieldPercentage * 100);
+      
+      // Call contract method to complete challenge
+      const tx = await stakingContract.completeChallenge(
+        userChallenge.user.walletAddress,
+        userChallenge.challengeId,
+        yieldBps,
+        { gasLimit: 500000 }
+      );
+      
+      // Wait for transaction confirmation
+      const receipt = await tx.wait();
+      
+      if (!receipt.status) {
+        throw new Error('Challenge completion transaction failed');
+      }
+      
+      transactionHash = receipt.hash;
+    } catch (contractError) {
+      console.error('Error processing blockchain transaction:', contractError);
+      
+      // Record the failure but allow retry
+      await prisma.transaction.create({
+        data: {
+          userId: auth.userId,
+          transactionType: 'REWARD',
+          amount: rewardAmount,
+          currency: 'USDC',
+          txHash: null,
+          status: 'FAILED',
+          createdAt: new Date()
+        }
+      });
+      
+      return NextResponse.json({ 
+        error: contractError.message || 'Transaction failed',
+        retryable: true 
+      }, { status: 500 });
+    }
+
+    // Update user challenge status
+    const updatedChallenge = await prisma.userChallenge.update({
+      where: { id: userChallengeId },
+      data: {
+        status: 'COMPLETED',
+        completionTxHash: transactionHash,
+        progressPercentage: 100
+      }
+    });
+
+    // Create transaction record
+    await prisma.transaction.create({
+      data: {
+        userId: auth.userId,
+        transactionType: 'REWARD',
+        amount: rewardAmount,
+        currency: 'USDC',
+        txHash: transactionHash,
+        status: 'COMPLETED',
+        completedAt: new Date()
+      }
+    });
+
+    // Create achievement if this is the user's first completed challenge
+    const completedChallengesCount = await prisma.userChallenge.count({
+      where: {
+        userId: auth.userId,
+        status: 'COMPLETED'
+      }
+    });
+
+    if (completedChallengesCount === 1) {
+      // Find the "First Challenge Completed" achievement
+      const achievement = await prisma.achievement.findFirst({
+        where: { achievementType: 'CHALLENGE_COMPLETED', threshold: 1 }
+      });
+      
+      if (achievement) {
+        await prisma.userAchievement.create({
+          data: {
+            userId: auth.userId,
+            achievementId: achievement.id
+          }
+        });
+      }
+    }
+
+    // Create notification
+    await prisma.notification.create({
+      data: {
+        userId: auth.userId,
+        type: 'CHALLENGE_COMPLETED',
+        title: 'Challenge Completed!',
+        message: `Congratulations! You've completed the "${userChallenge.challenge.title}" challenge and earned ${rewardAmount.toFixed(2)} USDC.`,
+        read: false
+      }
+    });
+
+    return NextResponse.json({
+      success: true,
+      challenge: updatedChallenge,
+      reward: rewardAmount,
+      transactionHash
+    });
+  } catch (error) {
+    console.error('Error completing challenge:', error);
+    return NextResponse.json({ error: 'Failed to complete challenge' }, { status: 500 });
+  }
 }
 
 ================
 File: app/api/challenges/create/route.js
 ================
-// app/api/challenges/create/route.js - Modified version
+// app/api/challenges/create/route.js
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { verifyAuth } from '@/lib/auth/verify';
@@ -813,6 +861,9 @@ export async function POST(request) {
       inviteCode = nanoid(8);
     }
     
+    // Get current blockchain network (default to 'polygon')
+    const contractChain = body.contractChain || 'polygon';
+    
     // Create the challenge
     const challenge = await prisma.challenge.create({
       data: {
@@ -832,7 +883,7 @@ export async function POST(request) {
         
         // Add blockchain-related fields if provided
         contractAddress: body.contractAddress || null,
-        contractChain: body.contractChain || null
+        contractChain: contractChain
       }
     });
     
@@ -841,9 +892,9 @@ export async function POST(request) {
       await prisma.transaction.create({
         data: {
           userId: auth.userId,
-          transactionType: 'CONTRACT_REGISTRATION',
+          transactionType: 'STAKE',
           amount: 0, // No amount for registration
-          currency: 'MATIC', // Gas fee currency
+          currency: contractChain === 'polygon' || contractChain === 'mumbai' ? 'MATIC' : 'ETH', // Gas fee currency
           txHash: body.transactionHash,
           status: 'COMPLETED',
           completedAt: new Date()
@@ -1396,6 +1447,97 @@ export async function GET(request) {
     return NextResponse.json(userChallenges);
   } catch (error) {
     console.error('Error fetching user challenges:', error);
+    return NextResponse.json({ error: 'Failed to fetch challenges' }, { status: 500 });
+  }
+}
+
+================
+File: app/api/challenges/route.js
+================
+// app/api/challenges/route.js
+import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+import { verifyAuth } from '@/lib/auth/verify';
+
+const prisma = new PrismaClient();
+
+export async function GET(request) {
+  try {
+    // Optional authentication - can still show challenges to non-authenticated users
+    const auth = await verifyAuth();
+    const isAuthenticated = auth.success;
+    
+    // Get query parameters
+    const { searchParams } = new URL(request.url);
+    const languageCode = searchParams.get('languageCode');
+    const proficiencyLevel = searchParams.get('proficiencyLevel');
+    
+    // Build query conditions
+    let whereConditions = {
+      isActive: true,
+    };
+    
+    if (languageCode) {
+      whereConditions.languageCode = languageCode;
+    }
+    
+    if (proficiencyLevel) {
+      whereConditions.proficiencyLevel = proficiencyLevel;
+    }
+    
+    // Fetch challenges with participant count
+    const challenges = await prisma.challenge.findMany({
+      where: whereConditions,
+      include: {
+        creator: {
+          select: {
+            id: true,
+            username: true
+          }
+        },
+        _count: {
+          select: {
+            participants: true
+          }
+        }
+      },
+      orderBy: {
+        createdAt: 'desc'
+      }
+    });
+    
+    // Format challenges for response
+    const formattedChallenges = challenges.map(challenge => {
+      // Check if the challenge has reached max participants
+      const isAtCapacity = 
+        challenge.maxParticipants && 
+        challenge._count.participants >= challenge.maxParticipants;
+      
+      return {
+        ...challenge,
+        participantCount: challenge._count.participants,
+        isAtCapacity,
+        creatorName: challenge.creator.username,
+        
+        // Add additional computed properties
+        formattedStartDate: challenge.createdAt.toLocaleDateString(),
+        formattedEndDate: new Date(
+          new Date(challenge.createdAt).setDate(
+            new Date(challenge.createdAt).getDate() + challenge.durationDays
+          )
+        ).toLocaleDateString(),
+        
+        // Calculate potential reward
+        potentialReward: challenge.stakeAmount * (1 + (challenge.yieldPercentage / 100)),
+        
+        // Remove sensitive or unnecessary data
+        _count: undefined
+      };
+    });
+    
+    return NextResponse.json(formattedChallenges);
+  } catch (error) {
+    console.error('Error fetching challenges:', error);
     return NextResponse.json({ error: 'Failed to fetch challenges' }, { status: 500 });
   }
 }
@@ -2011,6 +2153,159 @@ async function updateUserStreak(userChallengeId) {
   }
 
 ================
+File: app/api/notifications/[id]/route.js
+================
+// app/api/notifications/[id]/read/route.js
+import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+import { verifyAuth } from '@/lib/auth/verify';
+
+const prisma = new PrismaClient();
+
+export async function POST(request, { params }) {
+  const auth = await verifyAuth();
+  
+  if (!auth.success) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  
+  try {
+    const { id } = params;
+    
+    // Verify notification belongs to user
+    const notification = await prisma.notification.findUnique({
+      where: {
+        id,
+        userId: auth.userId
+      }
+    });
+    
+    if (!notification) {
+      return NextResponse.json({ error: 'Notification not found' }, { status: 404 });
+    }
+    
+    // Mark as read
+    const updatedNotification = await prisma.notification.update({
+      where: { id },
+      data: { read: true }
+    });
+    
+    return NextResponse.json(updatedNotification);
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    return NextResponse.json({ error: 'Failed to update notification' }, { status: 500 });
+  }
+}
+
+================
+File: app/api/notifications/read-all/route.js
+================
+// app/api/notifications/read-all/route.js
+import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+import { verifyAuth } from '@/lib/auth/verify';
+
+const prisma = new PrismaClient();
+
+export async function POST(request) {
+  const auth = await verifyAuth();
+  
+  if (!auth.success) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  
+  try {
+    // Mark all user's notifications as read
+    const result = await prisma.notification.updateMany({
+      where: {
+        userId: auth.userId,
+        read: false
+      },
+      data: {
+        read: true
+      }
+    });
+    
+    return NextResponse.json({ 
+      success: true, 
+      count: result.count 
+    });
+  } catch (error) {
+    console.error('Error marking all notifications as read:', error);
+    return NextResponse.json({ error: 'Failed to update notifications' }, { status: 500 });
+  }
+}
+
+================
+File: app/api/notifications/unread-count/route.js
+================
+// app/api/notifications/unread-count/route.js
+import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+import { verifyAuth } from '@/lib/auth/verify';
+
+const prisma = new PrismaClient();
+
+export async function GET(request) {
+  const auth = await verifyAuth();
+  
+  if (!auth.success) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  
+  try {
+    // Count unread notifications
+    const count = await prisma.notification.count({
+      where: {
+        userId: auth.userId,
+        read: false
+      }
+    });
+    
+    return NextResponse.json({ count });
+  } catch (error) {
+    console.error('Error counting unread notifications:', error);
+    return NextResponse.json({ error: 'Failed to count notifications' }, { status: 500 });
+  }
+}
+
+================
+File: app/api/notifications/route.js
+================
+// app/api/notifications/route.js (update to proper implementation)
+import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+import { verifyAuth } from '@/lib/auth/verify';
+
+const prisma = new PrismaClient();
+
+export async function GET(request) {
+  const auth = await verifyAuth();
+  
+  if (!auth.success) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  
+  try {
+    // Get notifications sorted by creation date (newest first)
+    const notifications = await prisma.notification.findMany({
+      where: {
+        userId: auth.userId
+      },
+      orderBy: {
+        createdAt: 'desc'
+      },
+      take: 50 // Limit to most recent 50
+    });
+    
+    return NextResponse.json(notifications);
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    return NextResponse.json({ error: 'Failed to fetch notifications' }, { status: 500 });
+  }
+}
+
+================
 File: app/api/users/activity/route.js
 ================
 // app/api/users/activity/route.js
@@ -2028,68 +2323,82 @@ export async function GET(request) {
   }
   
   try {
-    // Get query parameters
-    const searchParams = request.nextUrl.searchParams;
-    const period = searchParams.get('period') || 'week'; // 'week', 'month'
+    // Get combination of different activity types
+    const userId = auth.userId;
     
-    // Calculate date range
-    const endDate = new Date();
-    const startDate = new Date();
-    
-    if (period === 'week') {
-      startDate.setDate(startDate.getDate() - 7);
-    } else {
-      startDate.setMonth(startDate.getMonth() - 1);
-    }
-    
-    // Get practice minutes
-    const practiceMinutes = await prisma.dailyProgress.findMany({
-      where: {
-        userChallenge: {
-          userId: auth.userId
-        },
-        date: {
-          gte: startDate,
-          lte: endDate
-        }
-      },
-      select: {
-        date: true,
-        minutesPracticed: true,
-        userChallenge: {
-          select: {
-            challenge: {
-              select: {
-                languageCode: true
-              }
-            }
-          }
+    // Get recent conversations
+    const conversations = await prisma.aIConversation.findMany({
+      where: { userId },
+      orderBy: { startedAt: 'desc' },
+      take: 5,
+      include: {
+        messages: {
+          take: 1,
+          orderBy: { timestamp: 'desc' }
         }
       }
     });
     
-    // Aggregate practice minutes by day and language
-    const practiceByDay = {};
-    
-    practiceMinutes.forEach(record => {
-      const lang = record.userChallenge.challenge.languageCode;
-      const dateStr = record.date.toISOString().split('T')[0]; // YYYY-MM-DD
-      
-      if (!practiceByDay[dateStr]) {
-        practiceByDay[dateStr] = {};
+    // Get challenge activities
+    const challengeActivities = await prisma.userChallenge.findMany({
+      where: { userId },
+      orderBy: { startDate: 'desc' },
+      take: 5,
+      include: {
+        challenge: true
       }
-      
-      if (!practiceByDay[dateStr][lang]) {
-        practiceByDay[dateStr][lang] = 0;
-      }
-      
-      practiceByDay[dateStr][lang] += record.minutesPracticed;
     });
     
-    return NextResponse.json({ practiceByDay });
+    // Get achievements
+    const achievements = await prisma.userAchievement.findMany({
+      where: { userId },
+      orderBy: { earnedAt: 'desc' },
+      take: 5,
+      include: {
+        achievement: true
+      }
+    });
+    
+    // Combine and format activities
+    const formattedActivities = [
+      // Format conversation activities
+      ...conversations.map(conv => ({
+        id: `conv-${conv.id}`,
+        type: 'practice',
+        language: conv.languageCode,
+        details: `Practiced ${conv.durationMinutes || 0} minutes of conversation`,
+        timestamp: conv.startedAt.toISOString()
+      })),
+      
+      // Format challenge activities
+      ...challengeActivities.map(uc => ({
+        id: `challenge-${uc.id}`,
+        type: 'challenge',
+        language: uc.challenge.languageCode,
+        details: `${uc.status === 'ACTIVE' ? 'Joined' : uc.status === 'COMPLETED' ? 'Completed' : 'Participated in'} "${uc.challenge.title}"`,
+        timestamp: uc.startDate.toISOString()
+      })),
+      
+      // Format achievement activities
+      ...achievements.map(ua => ({
+        id: `achievement-${ua.id}`,
+        type: 'achievement',
+        language: '', // Achievement might not have a specific language
+        details: `Earned "${ua.achievement.name}" achievement`,
+        timestamp: ua.earnedAt.toISOString()
+      }))
+    ];
+    
+    // Sort by timestamp, most recent first
+    formattedActivities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    // Return the top 10 activities
+    return NextResponse.json({ 
+      activities: formattedActivities.slice(0, 10) 
+    });
   } catch (error) {
-    console.error('Error fetching activity data:', error);
-    return NextResponse.json({ error: 'Failed to fetch activity data' }, { status: 500 });
+    console.error('Error fetching user activities:', error);
+    return NextResponse.json({ error: 'Failed to fetch activities' }, { status: 500 });
   }
 }
 
@@ -2309,6 +2618,154 @@ export async function GET(request) {
     console.error('Error fetching analytics:', error);
     return NextResponse.json({ error: 'Failed to fetch analytics' }, { status: 500 });
   }
+}
+
+================
+File: app/api/users/language-stats/route.js
+================
+// app/api/users/language-stats/route.js
+import { NextResponse } from 'next/server';
+import { PrismaClient } from '@prisma/client';
+import { verifyAuth } from '@/lib/auth/verify';
+
+const prisma = new PrismaClient();
+
+export async function GET(request) {
+  const auth = await verifyAuth();
+  
+  if (!auth.success) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  
+  try {
+    const { searchParams } = new URL(request.url);
+    const languageCode = searchParams.get('languageCode');
+    
+    if (!languageCode) {
+      return NextResponse.json({ error: 'Language code is required' }, { status: 400 });
+    }
+    
+    const userId = auth.userId;
+    
+    // Get user language data
+    const userLanguage = await prisma.userLanguage.findUnique({
+      where: {
+        userId_languageCode: {
+          userId,
+          languageCode
+        }
+      }
+    });
+    
+    if (!userLanguage) {
+      return NextResponse.json({ error: 'User is not learning this language' }, { status: 404 });
+    }
+    
+    // Get conversation data
+    const conversations = await prisma.aIConversation.findMany({
+      where: {
+        userId,
+        languageCode
+      },
+      orderBy: {
+        startedAt: 'desc'
+      },
+      take: 100
+    });
+    
+    // Calculate total practice time
+    const totalMinutesPracticed = conversations.reduce((total, conv) => {
+      return total + (conv.durationMinutes || 0);
+    }, 0);
+    
+    // Get last practiced date
+    const lastPracticed = conversations.length > 0 ? conversations[0].startedAt : null;
+    
+    // Get progress records for vocabulary size
+    const latestProgress = await prisma.progressRecord.findFirst({
+      where: {
+        userId,
+        languageCode
+      },
+      orderBy: {
+        recordDate: 'desc'
+      }
+    });
+    
+    // Calculate streak
+    const streak = await calculateStreak(userId, languageCode);
+    
+    // Create stats object
+    const stats = {
+      currentStreak: streak,
+      vocabularySize: latestProgress?.vocabularySize || 0,
+      totalMinutesPracticed,
+      lastPracticed: lastPracticed?.toISOString() || null,
+      grammarAccuracy: latestProgress?.grammarAccuracy || 0,
+      speakingFluency: latestProgress?.speakingFluency || 0,
+      proficiencyLevel: userLanguage.proficiencyLevel
+    };
+    
+    return NextResponse.json(stats);
+  } catch (error) {
+    console.error('Error fetching language stats:', error);
+    return NextResponse.json({ error: 'Failed to fetch language statistics' }, { status: 500 });
+  }
+}
+
+// Helper function to calculate streak
+async function calculateStreak(userId, languageCode) {
+  // Get all conversation sessions ordered by date
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  
+  const conversations = await prisma.aIConversation.findMany({
+    where: {
+      userId,
+      languageCode
+    },
+    select: {
+      startedAt: true
+    },
+    orderBy: {
+      startedAt: 'desc'
+    }
+  });
+  
+  if (conversations.length === 0) {
+    return 0;
+  }
+  
+  // Check if practiced today
+  const latestDate = new Date(conversations[0].startedAt);
+  latestDate.setHours(0, 0, 0, 0);
+  
+  if (latestDate.getTime() !== today.getTime()) {
+    return 0; // No practice today, streak is 0
+  }
+  
+  // Count consecutive days
+  let streak = 1;
+  let currentDate = new Date(today);
+  
+  for (let i = 1; i <= 100; i++) { // Limit to 100 days back
+    currentDate.setDate(currentDate.getDate() - 1);
+    
+    // Check if there's a session for this day
+    const hasPractice = conversations.some(conv => {
+      const convDate = new Date(conv.startedAt);
+      convDate.setHours(0, 0, 0, 0);
+      return convDate.getTime() === currentDate.getTime();
+    });
+    
+    if (hasPractice) {
+      streak++;
+    } else {
+      break;
+    }
+  }
+  
+  return streak;
 }
 
 ================
@@ -2581,10 +3038,11 @@ import { useStaking } from '@/lib/web3/hooks/useStaking';
 import { useContract } from '@/lib/web3/hooks/useContract';
 import LoadingState from '@/components/ui/LoadingState';
 import ErrorMessage from '@/components/ui/ErrorMessage';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 export default function ChallengePage({ params }) {
   const router = useRouter();
-  const { id } = params;
+  const id = params.id;
   const [challenge, setChallenge] = useState(null);
   const [userParticipation, setUserParticipation] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -2724,15 +3182,53 @@ export default function ChallengePage({ params }) {
             </div>
           </div>
           
-          {/* Complete challenge button - only if challenge is active and progress is sufficient */}
-          {status === 'ACTIVE' && progressPercentage >= 80 && (
-            <button
-              onClick={handleCompleteChallenge}
-              className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-6 py-3 rounded-lg font-medium shadow-md transition-all"
-            >
-              Complete Challenge & Claim Rewards
-            </button>
-          )}
+          {userParticipation.status === 'ACTIVE' && userParticipation.progressPercentage >= 80 && (
+  <div>
+    {completionError && (
+      <div className="mb-4 bg-red-50 text-red-700 border border-red-200 rounded-md p-3">
+        <p className="font-medium">Error completing challenge</p>
+        <p className="text-sm">{completionError}</p>
+      </div>
+    )}
+    
+    <button
+      onClick={handleCompleteChallenge}
+      disabled={isCompletingChallenge}
+      className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-6 py-3 rounded-lg font-medium shadow-md transition-all disabled:opacity-50 flex items-center justify-center"
+    >
+      {isCompletingChallenge ? (
+        <>
+          <LoadingSpinner size="small" color="white" className="mr-2" />
+          Processing...
+        </>
+      ) : (
+        'Complete Challenge & Claim Rewards'
+      )}
+    </button>
+  </div>
+)}
+
+{/* Show completion status if available */}
+{completionStatus && (
+  <div className={`mt-4 p-4 rounded-md ${
+    completionStatus.success ? 'bg-green-50 border border-green-200 text-green-700' : 
+    'bg-red-50 border border-red-200 text-red-700'
+  }`}>
+    <p className="font-medium">{completionStatus.success ? 'Success!' : 'Error'}</p>
+    <p className="text-sm mt-1">{completionStatus.message}</p>
+    
+    {completionStatus.transactionHash && (
+      <a 
+        href={`https://mumbai.polygonscan.com/tx/${completionStatus.transactionHash}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs mt-2 inline-block underline"
+      >
+        View transaction
+      </a>
+    )}
+  </div>
+)}
           
           {/* If challenge is completed */}
           {status === 'COMPLETED' && (
@@ -2758,7 +3254,6 @@ export default function ChallengePage({ params }) {
     );
   };
   
-  // Add this handler for the complete challenge button
   const handleCompleteChallenge = async () => {
     if (!userParticipation || userParticipation.status !== 'ACTIVE') {
       return;
@@ -2766,6 +3261,7 @@ export default function ChallengePage({ params }) {
     
     try {
       setIsCompletingChallenge(true);
+      setCompletionError(null);
       
       const res = await fetch('/api/challenges/complete', {
         method: 'POST',
@@ -2797,6 +3293,7 @@ export default function ChallengePage({ params }) {
       }, 3000);
     } catch (error) {
       console.error('Error completing challenge:', error);
+      setCompletionError(error.message || 'Failed to complete challenge');
       setCompletionStatus({
         success: false,
         message: error.message || 'Failed to complete challenge'
@@ -2805,6 +3302,7 @@ export default function ChallengePage({ params }) {
       setIsCompletingChallenge(false);
     }
   };
+
   
   const handleJoinSuccess = (txHash) => {
     // Refresh the page data after successful join
@@ -3474,6 +3972,7 @@ File: app/dashboard/statistics/page.jsx
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import PracticeChart from '@/components/dashboard/PracticeChart';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { format, subDays, eachDayOfInterval } from 'date-fns';
 
@@ -3666,19 +4165,17 @@ export default function StatisticsPage() {
             />
           </div> */}
           
-          {/* Practice Chart */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden mb-8">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h2 className="text-xl font-bold text-slate-800">Practice Minutes</h2>
-            </div>
-            
-            <div className="p-6">
-              <div className="h-64">
-                {/* <PracticeChart data={chartData} /> */}
-              </div>
-            </div>
-          </div>
-          
+  <div className="px-6 py-4 border-b border-slate-100">
+    <h2 className="text-xl font-bold text-slate-800">Practice Minutes</h2>
+  </div>
+  
+  <div className="p-6">
+    <div className="h-64">
+      <PracticeChart data={chartData} />
+    </div>
+  </div>
+</div>
           {/* Current Streaks */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden mb-8">
             <div className="px-6 py-4 border-b border-slate-100">
@@ -3776,154 +4273,119 @@ export default function Dashboard() {
   const [activityData, setActivityData] = useState([]);
   const [error, setError] = useState(null);
   
-  useEffect(() => {
-    // Fetch user profile and challenges
-    async function fetchUserData() {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        // Fetch user profile
-        const profileRes = await fetch('/api/users/profile');
-        if (!profileRes.ok) {
-          if (profileRes.status === 401) {
-            // Redirect to login if unauthorized
-            router.push('/auth/signin');
-            return;
-          }
-          throw new Error('Failed to fetch user profile');
+
+useEffect(() => {
+  // Fetch user profile and challenges
+  async function fetchUserData() {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Fetch user profile
+      const profileRes = await fetch('/api/users/profile');
+      if (!profileRes.ok) {
+        if (profileRes.status === 401) {
+          // Redirect to login if unauthorized
+          router.push('/auth/signin');
+          return;
         }
-        const profileData = await profileRes.json();
-        
-        // Fetch user stats
-        const statsRes = await fetch('/api/users/analytics');
-        let statsData = {};
-        if (statsRes.ok) {
-          const analyticsData = await statsRes.json();
-          statsData = {
-            totalMinutesPracticed: analyticsData.summary?.totalPracticeMinutes || 0,
-            vocabularySize: analyticsData.progressRecords?.[0]?.vocabularySize || 0,
-            currentStreak: Object.values(analyticsData.streaksByLanguage || {})[0] || 0,
-            longestStreak: analyticsData.progressRecords?.[0]?.longestStreak || 0
-          };
-        }
-        
-        // Combine profile with stats
-        const fullProfile = {
-          ...profileData,
-          stats: statsData
+        throw new Error('Failed to fetch user profile');
+      }
+      const profileData = await profileRes.json();
+      
+      // Fetch user stats
+      const statsRes = await fetch('/api/users/analytics');
+      let statsData = {};
+      if (statsRes.ok) {
+        const analyticsData = await statsRes.json();
+        statsData = {
+          totalMinutesPracticed: analyticsData.summary?.totalPracticeMinutes || 0,
+          vocabularySize: analyticsData.progressRecords?.[0]?.vocabularySize || 0,
+          currentStreak: Object.values(analyticsData.streaksByLanguage || {})[0] || 0,
+          longestStreak: analyticsData.progressRecords?.[0]?.longestStreak || 0
         };
-        setProfile(fullProfile);
+      }
+      
+      // Combine profile with stats
+      const fullProfile = {
+        ...profileData,
+        stats: statsData
+      };
+      setProfile(fullProfile);
+      
+      // Fetch active challenges
+      const challengesRes = await fetch('/api/challenges/user?status=ACTIVE');
+      if (challengesRes.ok) {
+        const challengesData = await challengesRes.json();
+        setActiveChallenges(challengesData);
         
-        // Fetch active challenges
-        const challengesRes = await fetch('/api/challenges/user?status=ACTIVE');
-        if (challengesRes.ok) {
-          const challengesData = await challengesRes.json();
-          
-          // Transform challenge data to match the expected format
-          const formattedChallenges = challengesData.map(challenge => {
-            const startDate = new Date(challenge.startDate);
-            const endDate = new Date(challenge.endDate);
-            const today = new Date();
-            const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-            
-            return {
-              id: challenge.challengeId,
-              title: challenge.challenge.title,
-              languageCode: challenge.challenge.languageCode,
-              proficiencyLevel: challenge.challenge.proficiencyLevel,
-              durationDays: challenge.challenge.durationDays,
-              daysLeft: daysLeft > 0 ? daysLeft : 0,
-              dailyRequirement: challenge.challenge.dailyRequirement,
-              stakeAmount: challenge.stakedAmount,
-              progress: challenge.progressPercentage
-            };
+        // Set today's challenge if there are active challenges
+        if (challengesData.length > 0) {
+          // Prioritize the challenge with the lowest days left
+          const sortedChallenges = [...challengesData].sort((a, b) => {
+            const aEndDate = new Date(a.endDate);
+            const bEndDate = new Date(b.endDate);
+            return aEndDate - bEndDate;
           });
           
-          setActiveChallenges(formattedChallenges);
+          const nextChallenge = sortedChallenges[0];
           
-          // Set today's challenge if there are active challenges
-          if (formattedChallenges.length > 0) {
-            // Prioritize the challenge with the lowest days left
-            const sortedChallenges = [...formattedChallenges].sort((a, b) => a.daysLeft - b.daysLeft);
-            const nextChallenge = sortedChallenges[0];
-            
-            // Fetch today's exercise for this challenge
-            try {
-              const exerciseRes = await fetch(`/api/challenges/${nextChallenge.id}/daily-exercise`);
-              if (exerciseRes.ok) {
-                const exerciseData = await exerciseRes.json();
-                setTodayChallenge({
-                  id: nextChallenge.id,
-                  title: nextChallenge.title,
-                  description: exerciseData.description || "Continue your daily practice to maintain your streak!",
-                  exercise: exerciseData.exercise || `Practice ${nextChallenge.dailyRequirement} minutes of ${nextChallenge.languageCode === 'ja' ? 'Japanese' : nextChallenge.languageCode === 'ko' ? 'Korean' : 'language'} today.`,
-                  languageCode: nextChallenge.languageCode
-                });
-              } else {
-                // Fallback if no specific exercise
-                setTodayChallenge({
-                  id: nextChallenge.id,
-                  title: nextChallenge.title,
-                  description: "Continue your daily practice to maintain your streak!",
-                  exercise: `Practice ${nextChallenge.dailyRequirement} minutes of ${nextChallenge.languageCode === 'ja' ? 'Japanese' : nextChallenge.languageCode === 'ko' ? 'Korean' : 'language'} today.`,
-                  languageCode: nextChallenge.languageCode
-                });
-              }
-            } catch (exerciseError) {
-              console.error('Error fetching daily exercise:', exerciseError);
-              // Fallback
+          // Fetch today's exercise for this challenge
+          try {
+            const exerciseRes = await fetch(`/api/challenges/${nextChallenge.challengeId}/daily-exercise`);
+            if (exerciseRes.ok) {
+              const exerciseData = await exerciseRes.json();
               setTodayChallenge({
-                id: nextChallenge.id,
-                title: nextChallenge.title,
-                description: "Continue your daily practice to maintain your streak!",
-                exercise: `Practice ${nextChallenge.dailyRequirement} minutes of ${nextChallenge.languageCode === 'ja' ? 'Japanese' : nextChallenge.languageCode === 'ko' ? 'Korean' : 'language'} today.`,
-                languageCode: nextChallenge.languageCode
+                id: nextChallenge.challengeId,
+                title: nextChallenge.challenge.title,
+                description: exerciseData.description || "Continue your daily practice to maintain your streak!",
+                exercise: exerciseData.exercise || `Practice ${nextChallenge.challenge.dailyRequirement} minutes of ${getLanguageName(nextChallenge.challenge.languageCode)} today.`,
+                languageCode: nextChallenge.challenge.languageCode
               });
             }
+          } catch (exerciseError) {
+            console.error('Error fetching daily exercise:', exerciseError);
           }
         }
-        
-        // Fetch weekly activity data
-        const activityRes = await fetch('/api/users/activity?period=week');
-        if (activityRes.ok) {
-          const activityData = await activityRes.json();
-          
-          // Transform activity data to match the expected format
-          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-          const today = new Date();
-          const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
-          
-          const weeklyActivity = days.map((day, index) => {
-            const isToday = index === dayOfWeek;
-            const dateStr = getDateString(new Date(today.getTime() - ((dayOfWeek - index + 7) % 7) * 24 * 60 * 60 * 1000));
-            const minutesForDay = activityData.practiceByDay?.[dateStr] ? 
-              Object.values(activityData.practiceByDay[dateStr]).reduce((sum, val) => sum + val, 0) : 0;
-            
-            return {
-              day,
-              minutes: minutesForDay,
-              isToday
-            };
-          });
-          
-          setActivityData(weeklyActivity);
-        } else {
-          // Fallback to dummy data if API fails
-          const dummyActivity = generateDummyActivityData();
-          setActivityData(dummyActivity);
-        }
-        
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        setError(error.message);
-        setIsLoading(false);
       }
+      
+      // Fetch weekly activity data
+      const activityRes = await fetch('/api/users/activity?period=week');
+      if (activityRes.ok) {
+        const activityData = await activityRes.json();
+        
+        // Transform activity data to match the expected format for the chart
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const today = new Date();
+        const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
+        
+        const weeklyActivity = days.map((day, index) => {
+          const isToday = index === dayOfWeek;
+          const dateStr = getDateString(new Date(today.getTime() - ((dayOfWeek - index + 7) % 7) * 24 * 60 * 60 * 1000));
+          const minutesForDay = activityData.practiceByDay?.[dateStr] ? 
+            Object.values(activityData.practiceByDay[dateStr]).reduce((sum, val) => sum + val, 0) : 0;
+          
+          return {
+            day,
+            minutes: minutesForDay,
+            isToday
+          };
+        });
+        
+        setActivityData(weeklyActivity);
+      }
+      
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      setError(error.message);
+      setIsLoading(false);
     }
-    
-    fetchUserData();
-  }, [router]);
+  }
+  
+  fetchUserData();
+}, [router]);
+
   
   // Helper function to generate date string in YYYY-MM-DD format
   const getDateString = (date) => {
@@ -6142,13 +6604,15 @@ File: components/challenge/CreateChallengeForm.jsx
 // components/challenge/CreateChallengeForm.jsx
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { useContract } from '@/lib/web3/hooks/useContract';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import ErrorMessage from '@/components/ui/ErrorMessage';
 import TransactionStatus from '@/components/ui/TransactionStatus';
+import { ethers } from 'ethers';
+import { nanoid } from 'nanoid';
 
 // List of available languages
 const LANGUAGES = [
@@ -6177,7 +6641,18 @@ const PROFICIENCY_LEVELS = [
 
 export default function CreateChallengeForm() {
   const router = useRouter();
-  const { isConnected, stakingContract } = useContract();
+  const { 
+    isConnected, 
+    stakingContract, 
+    usdcContract, 
+    connectWallet, 
+    isLoading: isContractLoading, 
+    checkNetwork,
+    switchToLocalNetwork,
+    networkName,
+    chainId,
+    signer
+  } = useContract();
   
   const [formData, setFormData] = useState({
     title: '',
@@ -6199,6 +6674,20 @@ export default function CreateChallengeForm() {
   const [success, setSuccess] = useState(false);
   const [transaction, setTransaction] = useState(null);
   const [step, setStep] = useState('form'); // form, submitting, success
+  const [submissionProgress, setSubmissionProgress] = useState(null);
+  const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
+  
+  // Check if on correct network
+  useEffect(() => {
+    const verifyNetwork = async () => {
+      if (isConnected) {
+        const onCorrectNetwork = await checkNetwork();
+        setIsCorrectNetwork(onCorrectNetwork);
+      }
+    };
+    
+    verifyNetwork();
+  }, [isConnected, checkNetwork, chainId]);
   
   // Validate form is completely filled
   const isFormValid = () => {
@@ -6211,15 +6700,22 @@ export default function CreateChallengeForm() {
       'stakeAmount'
     ];
     
-    return requiredFields.every(field => {
+    const isValid = requiredFields.every(field => {
       const value = formData[field];
       return value !== undefined && value !== null && value !== '';
     });
+    
+    const hasValidNumbers = 
+      parseInt(formData.durationDays) >= 7 &&
+      parseInt(formData.dailyRequirement) >= 5 &&
+      parseFloat(formData.stakeAmount) >= 10;
+    
+    return isValid && hasValidNumbers;
   };
   
   // Estimate daily commitment
   const getDailyCommitmentLevel = () => {
-    const mins = formData.dailyRequirement;
+    const mins = parseInt(formData.dailyRequirement);
     if (mins <= 10) return { level: 'Easy', color: 'text-green-500' };
     if (mins <= 20) return { level: 'Moderate', color: 'text-amber-500' };
     if (mins <= 40) return { level: 'Challenging', color: 'text-orange-500' };
@@ -6245,6 +6741,50 @@ export default function CreateChallengeForm() {
       [name]: type === 'checkbox' ? checked : value
     }));
   };
+
+  // Function to approve USDC spending
+  const approveUSDC = async (amount) => {
+    try {
+      setSubmissionProgress({
+        step: 'approving',
+        message: 'Approving USDC spending...'
+      });
+      
+      // Check if already approved
+      const userAddress = await signer.getAddress();
+      const allowance = await usdcContract.allowance(userAddress, stakingContract.target);
+      const amountInWei = ethers.parseUnits(amount.toString(), 6); // USDC has 6 decimals
+      
+      if (allowance >= amountInWei) {
+        console.log("USDC already approved");
+        return true;
+      }
+      
+      // Approve USDC spending
+      const approveTx = await usdcContract.approve(
+        stakingContract.target, 
+        amountInWei
+      );
+      
+      setSubmissionProgress({
+        step: 'approvingConfirmation',
+        message: 'Waiting for approval confirmation...',
+        txHash: approveTx.hash
+      });
+      
+      // Wait for confirmation
+      const approveReceipt = await approveTx.wait();
+      
+      if (!approveReceipt.status) {
+        throw new Error("USDC approval transaction failed");
+      }
+      
+      return true;
+    } catch (error) {
+      console.error("Error approving USDC:", error);
+      throw new Error(`Failed to approve USDC: ${error.message}`);
+    }
+  };
   
   // Handle form submission
   const handleSubmit = async (e) => {
@@ -6253,6 +6793,28 @@ export default function CreateChallengeForm() {
     if (!isFormValid()) {
       setError('Please fill out all required fields');
       return;
+    }
+    
+    if (!isConnected) {
+      try {
+        await connectWallet();
+      } catch (connError) {
+        setError('Please connect your wallet to create a challenge');
+        return;
+      }
+    }
+    
+    if (!isCorrectNetwork) {
+      try {
+        const switched = await switchToLocalNetwork();
+        if (!switched) {
+          setError('Please switch to Localhost network to create a challenge');
+          return;
+        }
+      } catch (networkError) {
+        setError('Failed to switch to Localhost network. Please switch manually in your wallet.');
+        return;
+      }
     }
     
     setError(null);
@@ -6277,7 +6839,10 @@ export default function CreateChallengeForm() {
           const yieldBps = Math.round(parseFloat(formData.yieldPercentage) * 100); // Convert to basis points
           
           // Create a unique challenge ID - use timestamp + random string
-          const challengeId = `${Date.now()}-${Math.random().toString(36).substring(2, 10)}`;
+          const challengeId = `${Date.now()}-${nanoid(8)}`;
+          
+          // First approve USDC if necessary
+          await approveUSDC(formData.stakeAmount);
           
           setSubmissionProgress({
             step: 'confirming',
@@ -6287,11 +6852,11 @@ export default function CreateChallengeForm() {
           // Call the contract function
           const tx = await stakingContract.registerChallenge(
             challengeId,
-            stakeAmount,
+            ethers.parseUnits(formData.stakeAmount.toString(), 6), // Convert to USDC units (6 decimals)
             yieldBps,
             formData.isHardcore,
             parseInt(formData.durationDays),
-            { gasLimit: 300000 }
+            { gasLimit: 500000 }
           );
           
           setSubmissionProgress({
@@ -6327,6 +6892,11 @@ export default function CreateChallengeForm() {
             throw new Error(`Blockchain error: ${contractError.message}`);
           }
         }
+      } else {
+        // Development mode: create without blockchain
+        console.warn("Creating challenge without blockchain integration - development mode");
+        transactionHash = "0x" + Array(64).fill('0').join('');
+        contractAddress = process.env.NEXT_PUBLIC_STAKING_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
       }
       
       // Create challenge in database
@@ -6334,7 +6904,7 @@ export default function CreateChallengeForm() {
         ...formData,
         transactionHash,
         contractAddress,
-        contractChain: 'polygon' // Or use environment config to determine chain
+        contractChain: 'localhost' // Changed from 'polygon' to 'localhost'
       };
       
       const response = await fetch('/api/challenges/create', {
@@ -6376,6 +6946,36 @@ export default function CreateChallengeForm() {
     }
   };
   
+  // Render network warning if needed
+  const renderNetworkWarning = () => {
+    if (isConnected && !isCorrectNetwork) {
+      return (
+        <div className="bg-amber-50 border border-amber-200 rounded-md p-4 text-amber-800 mb-6">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-amber-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium">Wrong Network Detected</h3>
+              <p className="text-sm mt-1">
+                You are currently on {networkName || 'an unsupported network'}. Please switch to Localhost network to create challenges.
+              </p>
+              <button
+                onClick={switchToLocalNetwork}
+                className="mt-2 px-3 py-1 text-sm bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200"
+              >
+                Switch to Localhost
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  };
+
   // Render the form step
   const renderForm = () => (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -6385,6 +6985,8 @@ export default function CreateChallengeForm() {
           dismiss={() => setError(null)} 
         />
       )}
+      
+      {renderNetworkWarning()}
       
       <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
         <div className="px-6 py-4 border-b border-gray-200">
@@ -6677,8 +7279,15 @@ export default function CreateChallengeForm() {
             <div className="ml-3">
               <h3 className="text-sm font-medium">Wallet not connected</h3>
               <p className="text-sm mt-1">
-                Your challenge will be created without blockchain integration. Connect your wallet to enable staking functionality.
+                Connect your wallet to enable blockchain integration for staking and rewards.
               </p>
+              <button
+                type="button"
+                onClick={connectWallet}
+                className="mt-2 px-3 py-1 text-sm bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200"
+              >
+                Connect Wallet
+              </button>
             </div>
           </div>
         </div>
@@ -6690,6 +7299,7 @@ export default function CreateChallengeForm() {
           type="button"
           onClick={() => router.back()}
           className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 mr-3"
+          disabled={isSubmitting}
         >
           Cancel
         </button>
@@ -6704,19 +7314,79 @@ export default function CreateChallengeForm() {
     </form>
   );
   
-  // Render the submitting step
+  // Render the submitting step with detailed progress
   const renderSubmitting = () => (
     <div className="text-center py-12">
       <LoadingSpinner size="large" />
       <h2 className="mt-4 text-lg font-medium text-gray-900">Creating Your Challenge</h2>
-      <p className="mt-2 text-sm text-gray-500">
-        Please wait while we set up your challenge...
-      </p>
-      {isConnected && (
-        <p className="mt-1 text-sm text-gray-500">
-          This includes registering it on the blockchain, which may take a minute.
-        </p>
+      
+      {submissionProgress && (
+        <div className="mt-6 max-w-md mx-auto">
+          <div className="space-y-4">
+            <div className="flex items-center">
+              <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${
+                submissionProgress.step === 'preparing' ? 'bg-blue-500 text-white' : 
+                submissionProgress.step === 'approving' || submissionProgress.step === 'approvingConfirmation' ? 'bg-yellow-500 text-white' : 
+                submissionProgress.step === 'confirming' ? 'bg-yellow-500 text-white' : 
+                submissionProgress.step === 'mining' ? 'bg-yellow-500 text-white' : 
+                submissionProgress.step === 'confirmed' ? 'bg-green-500 text-white' : 
+                'bg-gray-200'
+              }`}>
+                {submissionProgress.step === 'confirmed' ? (
+                  <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                  </svg>
+                ) : (
+                  '1'
+                )}
+              </div>
+              <div className="ml-4">
+                <h3 className="text-sm font-medium">{
+                  submissionProgress.step === 'preparing' ? 'Preparing Transaction' : 
+                  submissionProgress.step === 'approving' ? 'Approving USDC Spending' : 
+                  submissionProgress.step === 'approvingConfirmation' ? 'Confirming USDC Approval' : 
+                  submissionProgress.step === 'confirming' ? 'Waiting for Confirmation' : 
+                  submissionProgress.step === 'mining' ? 'Processing Transaction' : 
+                  submissionProgress.step === 'confirmed' ? 'Transaction Confirmed' : 
+                  'Processing'
+                }</h3>
+                <p className="text-sm text-gray-500">{submissionProgress.message}</p>
+                
+                {submissionProgress.txHash && (
+                  <a 
+                    href={`https://mumbai.polygonscan.com/tx/${submissionProgress.txHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-cyan-600 hover:text-cyan-800 mt-1 inline-block"
+                  >
+                    View transaction on explorer
+                  </a>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex items-center">
+              <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${
+                submissionProgress.step === 'confirmed' ? 'bg-blue-500 text-white' : 'bg-gray-200'
+              }`}>
+                2
+              </div>
+              <div className="ml-4">
+                <h3 className="text-sm font-medium">Creating Challenge Record</h3>
+                <p className="text-sm text-gray-500">
+                  {submissionProgress.step === 'confirmed' 
+                    ? 'Saving challenge details to our database...' 
+                    : 'Waiting for blockchain confirmation...'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
+      
+      <p className="mt-4 text-sm text-gray-500">
+        This process may take a minute or two to complete. Please don't close this window.
+      </p>
     </div>
   );
   
@@ -6739,12 +7409,14 @@ export default function CreateChallengeForm() {
             txHash={transaction.hash}
             status={transaction.status}
             message="Blockchain transaction completed"
+            network="mumbai"
           />
         </div>
       )}
     </div>
   );
   
+  // Render the appropriate step
   return (
     <DashboardLayout>
       <div className="py-8">
@@ -6772,8 +7444,7 @@ export default function CreateChallengeForm() {
 ================
 File: components/challenge/JoinChallengeFlow.jsx
 ================
-'use client';
-
+// Updated JoinChallengeFlow.jsx
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStaking } from '@/lib/web3/hooks/useStaking';
@@ -6782,16 +7453,18 @@ import { useYield } from '@/lib/web3/hooks/useYield';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import ErrorMessage from '@/components/ui/ErrorMessage';
 import TransactionStatus from '@/components/ui/TransactionStatus';
+import { ethers } from 'ethers';
 
 export default function JoinChallengeFlow({ challenge, onSuccess, onCancel }) {
   const router = useRouter();
-  const { isConnected, signer } = useContract();
+  const { isConnected, signer, usdcContract, stakingContract } = useContract();
   const { stakeForChallenge, isStaking, stakingError, transaction, stakingSuccess } = useStaking();
   const { projectedReward, apy } = useYield(challenge.stakeAmount, challenge.yieldPercentage, challenge.durationDays);
   
   const [step, setStep] = useState('confirmation'); // confirmation, staking, result
   const [walletAddress, setWalletAddress] = useState('');
   const [error, setError] = useState(null);
+  const [stakingStage, setStakingStage] = useState(null); // 'approving', 'staking', 'confirming'
   
   // Get connected wallet address
   useEffect(() => {
@@ -6823,80 +7496,121 @@ export default function JoinChallengeFlow({ challenge, onSuccess, onCancel }) {
     }
   }, [stakingError]);
   
-// Enhanced staking function in JoinChallengeFlow.jsx
-const handleJoinChallenge = async () => {
-  setError(null);
-  
-  if (!isConnected) {
-    setError('Please connect your wallet first');
-    return;
-  }
-  
-  try {
-    setStep('staking');
-    setStakingStage('approving'); // Track substages: 'approving', 'staking', 'confirming'
-    
-    // 1. First approve USDC spending
-    try {
-      const approvalTx = await approveUSDC(challenge.stakeAmount);
-      setStakingStage('staking');
-      console.log('USDC approval confirmed:', approvalTx);
-    } catch (approvalError) {
-      if (approvalError.code === 4001) {
-        throw new Error('You rejected the approval transaction. Please approve USDC spending to continue.');
-      }
-      throw new Error(`Failed to approve USDC: ${approvalError.message}`);
+  // Function to approve USDC for spending
+  const approveUSDC = async (amount) => {
+    if (!usdcContract || !stakingContract || !isConnected) {
+      throw new Error('Wallet not connected or contracts not initialized');
     }
     
-    // 2. Stake for the challenge
     try {
-      const stakingTxHash = await stakeForChallenge(
-        challenge.id,
-        challenge.stakeAmount,
-        challenge.isHardcore
-      );
+      setError(null);
+      // Convert amount to USDC units (6 decimals)
+      const usdcAmount = ethers.parseUnits(amount.toString(), 6);
       
-      if (!stakingTxHash) {
-        throw new Error('Failed to stake. Please try again.');
+      // Check if already approved
+      const userAddress = await signer.getAddress();
+      const allowance = await usdcContract.allowance(userAddress, stakingContract.target);
+      
+      if (allowance >= usdcAmount) {
+        console.log("USDC already approved");
+        return { success: true };
       }
       
-      setStakingStage('confirming');
+      // Approve staking contract to spend USDC
+      const tx = await usdcContract.approve(stakingContract.target, usdcAmount);
+      console.log('Approval transaction submitted:', tx.hash);
       
-      // 3. Register participation on backend
-      const joinResponse = await fetch('/api/challenges/join', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          challengeId: challenge.id,
-          transactionHash: stakingTxHash
-        }),
-      });
+   
+      const receipt = await tx.wait();
+      console.log('Approval transaction confirmed:', receipt.hash);
       
-      if (!joinResponse.ok) {
-        const errorData = await joinResponse.json();
-        throw new Error(errorData.error || 'Failed to join challenge');
+      if (receipt.status === 1) {
+        return { success: true, hash: receipt.hash };
+      } else {
+        throw new Error('Approval transaction failed');
       }
-      
-      const joinData = await joinResponse.json();
-      
-      // 4. Success - call onSuccess callback with complete data
-      if (onSuccess) {
-        onSuccess(stakingTxHash, joinData);
-      }
-    } catch (stakingError) {
-      if (stakingError.code === 4001) {
-        throw new Error('You rejected the staking transaction. Please approve the transaction to join the challenge.');
-      }
-      throw stakingError;
+    } catch (error) {
+      console.error('Error approving USDC:', error);
+      throw error;
     }
-  } catch (error) {
-    console.error('Error joining challenge:', error);
-    setError(error.message || 'Failed to join challenge');
-    setStep('confirmation'); // Go back to confirmation step on error
-  }
-};
+  };
+  
+  // Enhanced staking function in JoinChallengeFlow.jsx
+  const handleJoinChallenge = async () => {
+
+    console.log('Joining challenge...');
+    setError(null);
+    
+    if (!isConnected) {
+      setError('Please connect your wallet first');
+      return;
+    }
+    
+    try {
+      setStep('staking');
+      setStakingStage('approving'); // Track substages: 'approving', 'staking', 'confirming'
+      
+      // 1. First approve USDC spending
+      try {
+        const approvalResult = await approveUSDC(challenge.stakeAmount);
+        setStakingStage('staking');
+        console.log('USDC approval confirmed:', approvalResult);
+      } catch (approvalError) {
+        if (approvalError.code === 4001) {
+          throw new Error('You rejected the approval transaction. Please approve USDC spending to continue.');
+        }
+        throw new Error(`Failed to approve USDC: ${approvalError.message}`);
+      }
+      
+      // 2. Stake for the challenge
+      try {
+        const stakingTxHash = await stakeForChallenge(
+          challenge.id,
+          challenge.stakeAmount,
+          challenge.isHardcore
+        );
+        
+        if (!stakingTxHash) {
+          throw new Error('Failed to stake. Please try again.');
+        }
+        
+        setStakingStage('confirming');
+        
+        // 3. Register participation on backend
+        const joinResponse = await fetch('/api/challenges/join', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            challengeId: challenge.id,
+            transactionHash: stakingTxHash
+          }),
+        });
+        
+        if (!joinResponse.ok) {
+          const errorData = await joinResponse.json();
+          throw new Error(errorData.error || 'Failed to join challenge');
+        }
+        
+        const joinData = await joinResponse.json();
+        
+        // 4. Success - call onSuccess callback with complete data
+        if (onSuccess) {
+          onSuccess(stakingTxHash, joinData);
+        }
+      } catch (stakingError) {
+        if (stakingError.code === 4001) {
+          throw new Error('You rejected the staking transaction. Please approve the transaction to join the challenge.');
+        }
+        throw stakingError;
+      }
+    } catch (error) {
+      console.error('Error joining challenge:', error);
+      setError(error.message || 'Failed to join challenge');
+      setStep('confirmation'); // Go back to confirmation step on error
+    }
+  };
 
   // Format currency
   const formatCurrency = (amount) => {
@@ -6978,7 +7692,7 @@ const handleJoinChallenge = async () => {
         </button>
         <button
           onClick={handleJoinChallenge}
-          className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 text-white rounded-md hover:from-cyan-600 hover:to-teal-600"
+          className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 text-white rounded-md hover:from-cyan-600 hover:to-teal-600 cursor-pointer"
           disabled={!isConnected}
         >
           {isConnected ? 'Join Challenge' : 'Connect Wallet to Join'}
@@ -6987,16 +7701,62 @@ const handleJoinChallenge = async () => {
     </div>
   );
   
-  // Staking Step (loading)
+  // Staking Step (loading) with detailed substages
   const renderStaking = () => (
     <div className="space-y-6 text-center py-8">
       <LoadingSpinner size="large" />
       <div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">Staking in Progress</h2>
-        <p className="text-gray-500">
-          Please confirm the transaction in your wallet.<br />
-          Do not close this window until the transaction is complete.
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Joining Challenge</h2>
+        <p className="text-gray-600">
+          {stakingStage === 'approving' ? 'Approving USDC spending...' : 
+           stakingStage === 'staking' ? 'Staking tokens for challenge...' :
+           stakingStage === 'confirming' ? 'Finalizing participation...' :
+           'Processing transaction...'}
         </p>
+        <p className="text-sm text-gray-500 mt-4">
+          Please confirm the transaction in your wallet.<br />
+          Do not close this window until the process is complete.
+        </p>
+      </div>
+      
+      {/* Progress indicator */}
+      <div className="max-w-md mx-auto">
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-between">
+            <div>
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                stakingStage === 'approving' ? 'bg-cyan-600 text-white' : 
+                stakingStage === 'staking' || stakingStage === 'confirming' ? 'bg-green-600 text-white' : 
+                'bg-gray-300 text-gray-700'
+              }`}>
+                1
+              </span>
+              <span className="mt-2 block text-xs font-medium text-gray-700">Approve</span>
+            </div>
+            <div>
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                stakingStage === 'staking' ? 'bg-cyan-600 text-white' : 
+                stakingStage === 'confirming' ? 'bg-green-600 text-white' : 
+                'bg-gray-300 text-gray-700'
+              }`}>
+                2
+              </span>
+              <span className="mt-2 block text-xs font-medium text-gray-700">Stake</span>
+            </div>
+            <div>
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                stakingStage === 'confirming' ? 'bg-cyan-600 text-white' : 
+                'bg-gray-300 text-gray-700'
+              }`}>
+                3
+              </span>
+              <span className="mt-2 block text-xs font-medium text-gray-700">Confirm</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -7324,6 +8084,7 @@ import Link from 'next/link';
 export default function LanguageStats({ languageCode, proficiencyLevel }) {
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   // Get language name from language code
   const getLanguageName = (code) => {
@@ -7359,34 +8120,30 @@ export default function LanguageStats({ languageCode, proficiencyLevel }) {
   };
   
   useEffect(() => {
-    // This would normally fetch real stats from an API
-    // For now, we'll use dummy data
-    const fetchStats = async () => {
+    const fetchLanguageStats = async () => {
       setIsLoading(true);
+      setError(null);
+      
       try {
-        // In a real app, you would fetch stats from the server
-        // const response = await fetch(`/api/stats/language/${languageCode}`);
-        // const data = await response.json();
+        const response = await fetch(`/api/users/language-stats?languageCode=${languageCode}`);
         
-        // Dummy data for now
-        const dummyData = {
-          streak: Math.floor(Math.random() * 30),
-          vocabularySize: Math.floor(Math.random() * 2000) + 100,
-          minutesPracticed: Math.floor(Math.random() * 500) + 50,
-          lastPracticed: new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000)).toISOString(),
-        };
+        if (!response.ok) {
+          throw new Error('Failed to fetch language statistics');
+        }
         
-        setTimeout(() => {
-          setStats(dummyData);
-          setIsLoading(false);
-        }, 500);
+        const data = await response.json();
+        setStats(data);
       } catch (error) {
         console.error('Error fetching language stats:', error);
+        setError(error.message);
+      } finally {
         setIsLoading(false);
       }
     };
     
-    fetchStats();
+    if (languageCode) {
+      fetchLanguageStats();
+    }
   }, [languageCode]);
   
   // Format date as relative time (e.g., "2 days ago")
@@ -7412,6 +8169,23 @@ export default function LanguageStats({ languageCode, proficiencyLevel }) {
         <div className="h-2 bg-gray-200 rounded mb-2.5"></div>
         <div className="h-2 bg-gray-200 rounded mb-2.5"></div>
         <div className="h-2 bg-gray-200 rounded"></div>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="border border-red-200 rounded-lg p-4 bg-red-50 text-red-700">
+        <p className="font-medium">Error loading language statistics</p>
+        <p className="text-sm">{error}</p>
+      </div>
+    );
+  }
+  
+  if (!stats) {
+    return (
+      <div className="border border-gray-200 rounded-lg p-4 text-center">
+        <p className="text-gray-500">No statistics available for this language.</p>
       </div>
     );
   }
@@ -7444,15 +8218,15 @@ export default function LanguageStats({ languageCode, proficiencyLevel }) {
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <div className="text-sm text-gray-500">Current streak</div>
-            <div className="font-bold text-lg">{stats.streak} days</div>
+            <div className="font-bold text-lg">{stats.currentStreak || 0} days</div>
           </div>
           <div>
             <div className="text-sm text-gray-500">Vocabulary size</div>
-            <div className="font-bold text-lg">{stats.vocabularySize} words</div>
+            <div className="font-bold text-lg">{stats.vocabularySize || 0} words</div>
           </div>
           <div>
             <div className="text-sm text-gray-500">Total practice time</div>
-            <div className="font-bold text-lg">{stats.minutesPracticed} min</div>
+            <div className="font-bold text-lg">{stats.totalMinutesPracticed || 0} min</div>
           </div>
           <div>
             <div className="text-sm text-gray-500">Last practiced</div>
@@ -7481,6 +8255,49 @@ export default function LanguageStats({ languageCode, proficiencyLevel }) {
 }
 
 ================
+File: components/dashboard/PracticeChart.jsx
+================
+// New component: components/dashboard/PracticeChart.jsx
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+export default function PracticeChart({ data }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 bg-gray-50 rounded-md border border-gray-200">
+        <p className="text-gray-500">No practice data available</p>
+      </div>
+    );
+  }
+
+  return (
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart
+        data={data}
+        margin={{
+          top: 5,
+          right: 30,
+          left: 20,
+          bottom: 5,
+        }}
+      >
+        <CartesianGrid strokeDasharray="3 3" />
+        <XAxis dataKey="date" />
+        <YAxis />
+        <Tooltip formatter={(value) => [`${value} min`, 'Practice Time']} />
+        <Legend />
+        <Line
+          type="monotone"
+          dataKey="minutes"
+          stroke="#0ea5e9"
+          activeDot={{ r: 8 }}
+          name="Minutes Practiced"
+        />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+================
 File: components/dashboard/RecentActivity.jsx
 ================
 // components/dashboard/RecentActivity.jsx
@@ -7489,55 +8306,25 @@ import { useState, useEffect } from 'react';
 export default function RecentActivity() {
   const [activities, setActivities] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   useEffect(() => {
-    // This would normally fetch real activities from an API
-    // For now, we'll use dummy data
+    // Fetch real activity data from API
     const fetchActivities = async () => {
       setIsLoading(true);
       try {
-        // In a real app, you would fetch activities from the server
-        // const response = await fetch('/api/activities');
-        // const data = await response.json();
+        const response = await fetch('/api/users/activity');
         
-        // Dummy data for now
-        const dummyData = [
-          {
-            id: '1',
-            type: 'practice',
-            language: 'ja',
-            details: 'Completed 15 minute conversation',
-            timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '2',
-            type: 'challenge',
-            language: 'ja',
-            details: 'Joined "60-Day Japanese Immersion"',
-            timestamp: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '3',
-            type: 'achievement',
-            language: 'ja',
-            details: 'Earned "5-Day Streak" badge',
-            timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '4',
-            type: 'practice',
-            language: 'es',
-            details: 'Learned 20 new vocabulary words',
-            timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-        ];
+        if (!response.ok) {
+          throw new Error('Failed to fetch activity data');
+        }
         
-        setTimeout(() => {
-          setActivities(dummyData);
-          setIsLoading(false);
-        }, 500);
+        const data = await response.json();
+        setActivities(data.activities || []);
       } catch (error) {
         console.error('Error fetching activities:', error);
+        setError(error.message);
+      } finally {
         setIsLoading(false);
       }
     };
@@ -7627,7 +8414,8 @@ export default function RecentActivity() {
         );
     }
   };
-if (isLoading) {
+
+  if (isLoading) {
     return (
       <div className="space-y-4">
         {[1, 2, 3].map((item) => (
@@ -7639,6 +8427,15 @@ if (isLoading) {
             </div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 text-red-700 border border-red-200 rounded-md p-4">
+        <p className="font-medium">Error loading activities</p>
+        <p className="text-sm">{error}</p>
       </div>
     );
   }
@@ -7684,6 +8481,8 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
+import NotificationCenter from '../notifications/NotificationCenter';
+import { useContract } from '@/lib/web3/hooks/useContract';
 
 export default function DashboardLayout({ children }) {
   const pathname = usePathname();
@@ -7695,6 +8494,35 @@ export default function DashboardLayout({ children }) {
   const [notifications, setNotifications] = useState([]);
   const [hasUnreadNotifications, setHasUnreadNotifications] = useState(false);
   
+  const { isConnected } = useContract();
+
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(0);
+
+useEffect(() => {
+  const fetchNotificationsCount = async () => {
+    try {
+      const response = await fetch('/api/notifications/unread-count');
+      if (response.ok) {
+        const data = await response.json();
+        setUnreadNotificationsCount(data.count);
+      }
+    } catch (error) {
+      console.error('Error fetching unread notifications count:', error);
+    }
+  };
+  
+  if (isConnected) {
+    fetchNotificationsCount();
+    
+    // Set up polling for new notifications
+    const interval = setInterval(fetchNotificationsCount, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }
+}, [isConnected]);
+
+
+
   useEffect(() => {
     async function fetchUserData() {
       try {
@@ -7862,16 +8690,21 @@ export default function DashboardLayout({ children }) {
                 New Challenge
               </Link>
               
-              {/* Notifications button */}
-              <button className="p-2 rounded-full text-gray-400 hover:text-gray-500 relative">
-                <span className="sr-only">View notifications</span>
-                <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                </svg>
-                {hasUnreadNotifications && (
-                  <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-400 ring-2 ring-white"></span>
-                )}
-              </button>
+              <button 
+  className="p-2 rounded-full text-gray-400 hover:text-gray-500 relative"
+  onClick={() => setIsNotificationsOpen(true)}
+>
+  <span className="sr-only">View notifications</span>
+  <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+  </svg>
+  {unreadNotificationsCount > 0 && (
+    <span className="absolute top-0 right-0 inline-flex items-center justify-center px-2 py-1 text-xs font-bold leading-none text-white transform translate-x-1/2 -translate-y-1/2 bg-red-500 rounded-full">
+      {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
+    </span>
+  )}
+</button>
+
               
               {/* Profile dropdown */}
               <div className="ml-3 relative">
@@ -8128,6 +8961,9 @@ export default function DashboardLayout({ children }) {
           </svg>
         </Link>
       </div>
+      {isNotificationsOpen && (
+  <NotificationCenter onClose={() => setIsNotificationsOpen(false)} />
+)}
     </div>
   );
 }
@@ -8156,6 +8992,8 @@ export default function ConversationInterface({ languageCode, userChallengeId })
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const messagesEndRef = useRef(null);
   const router = useRouter();
+
+  const [practiceTimeSeconds, setPracticeTimeSeconds] = useState(0);
   
   // Initialize practice session and fetch daily goal
   useEffect(() => {
@@ -8182,56 +9020,67 @@ export default function ConversationInterface({ languageCode, userChallengeId })
     setSessionStartTime(new Date());
   }, [userChallengeId]);
   
-  // Timer for practice tracking - update every minute
   useEffect(() => {
     let timer;
+    
     if (sessionStartTime) {
       // Initial calculation
       const calculatePracticeTime = () => {
         const now = new Date();
-        const elapsedMinutes = Math.floor((now - sessionStartTime) / 60000);
-        setPracticeTime(elapsedMinutes);
+        const elapsedSeconds = Math.floor((now - sessionStartTime) / 1000);
+        setPracticeTimeSeconds(elapsedSeconds);
         
-        // Update progress if part of a challenge
-        if (userChallengeId) {
-          setPracticeStatus(prev => ({
-            ...prev,
-            progress: prev.progress + 1,
-            isCompleted: prev.progress + 1 >= prev.dailyGoal
-          }));
-          
-          // Send progress update to server
-          updatePracticeProgress(elapsedMinutes);
+        // Update minutes for display (rounded down)
+        const minutes = Math.floor(elapsedSeconds / 60);
+        setPracticeTime(minutes);
+        
+        // Only update progress on minute boundaries
+        if (elapsedSeconds % 60 === 0 && elapsedSeconds > 0 && userChallengeId) {
+          // Update progress in database - we update every minute
+          updatePracticeProgress(1);
         }
       };
       
-      // Set timer to run every minute
-      timer = setInterval(calculatePracticeTime, 60000);
+      // Set timer to run every second for smooth countdown
+      timer = setInterval(calculatePracticeTime, 1000);
     }
     
     return () => clearInterval(timer);
   }, [sessionStartTime, userChallengeId]);
+
   
-  // Function to update practice progress on server
   const updatePracticeProgress = async (minutes) => {
-    if (!userChallengeId) return;
+    if (!userChallengeId || minutes <= 0) return;
     
     try {
-      await fetch('/api/challenges/update-progress', {
+      const response = await fetch('/api/challenges/update-progress', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           userChallengeId,
-          minutes: 1 // We track 1 minute at a time
+          minutes,
+          conversationId
         }),
       });
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Update local state with the response
+        setPracticeStatus(prev => ({
+          ...prev,
+          progress: data.minutesPracticed,
+          isCompleted: data.completed
+        }));
+      }
     } catch (error) {
       console.error('Error updating practice progress:', error);
     }
   };
   
+
+
   // Start conversation with initial greeting
   useEffect(() => {
     const startConversation = async () => {
@@ -8334,78 +9183,97 @@ export default function ConversationInterface({ languageCode, userChallengeId })
     }
   };
   
-  const handleEndSession = async () => {
-    try {
-      // Calculate final practice time
-      const finalMinutes = practiceTime;
-      
-      // Ensure we save the final practice minutes
-      if (userChallengeId && finalMinutes > 0) {
-        await fetch('/api/challenges/update-progress', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userChallengeId,
-            minutes: finalMinutes,
-            isSessionEnd: true,
-            conversationId
-          }),
-        });
-      }
-      
-      // Optionally get a summary of the session
-      if (conversationId) {
-        await fetch('/api/conversation/evaluate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            conversationId
-          }),
-        });
-      }
-      
-      router.push('/dashboard');
-    } catch (error) {
-      console.error('Error ending session:', error);
-      router.push('/dashboard');
-    }
-  };
-
-
-  const renderProgressBar = () => {
-    if (!userChallengeId) return null;
-    
-    const percentage = Math.min(100, (practiceStatus.progress / practiceStatus.dailyGoal) * 100);
-    
-    return (
-      <div className="mb-4">
-        <div className="flex justify-between text-sm text-slate-500 mb-1">
-          <span>Daily Goal: {practiceStatus.progress}/{practiceStatus.dailyGoal} minutes</span>
-          <span>{percentage.toFixed(0)}%</span>
-        </div>
-        <div className="w-full bg-slate-200 rounded-full h-2">
-          <div 
-            className={`h-2 rounded-full ${
-              practiceStatus.isCompleted 
-                ? 'bg-green-500' 
-                : 'bg-gradient-to-r from-cyan-400 to-teal-500'
-            }`}
-            style={{ width: `${percentage}%` }}
-          ></div>
-        </div>
-        {practiceStatus.isCompleted && (
-          <p className="text-sm text-green-600 mt-1">
-            ✓ Daily goal completed! Keep practicing for extra progress.
-          </p>
-        )}
-      </div>
-    );
-  };
   
+
+// Improved end session function to ensure we record the final minutes
+const handleEndSession = async () => {
+try {
+  // Calculate final practice time in minutes (rounded up to give user benefit)
+  const finalMinutes = Math.ceil(practiceTimeSeconds / 60);
+  
+  // Ensure we save the final practice minutes
+  if (userChallengeId && finalMinutes > 0) {
+    await fetch('/api/challenges/update-progress', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userChallengeId,
+        minutes: finalMinutes,
+        isSessionEnd: true,
+        conversationId
+      }),
+    });
+  }
+  
+  // Optionally get a summary of the session
+  if (conversationId && messages.length >= 5) {
+    try {
+      const evalResponse = await fetch('/api/conversation/evaluate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversationId
+        }),
+      });
+      
+      if (evalResponse.ok) {
+        const evalData = await evalResponse.json();
+        // Could show a summary modal here before redirecting
+        console.log('Conversation evaluation:', evalData);
+      }
+    } catch (evalError) {
+      console.error('Error evaluating conversation:', evalError);
+    }
+  }
+  
+  router.push('/dashboard');
+} catch (error) {
+  console.error('Error ending session:', error);
+  router.push('/dashboard');
+}
+};
+
+// Improved progress bar with better visual feedback
+const renderProgressBar = () => {
+if (!userChallengeId) return null;
+
+const percentage = Math.min(100, (practiceStatus.progress / practiceStatus.dailyGoal) * 100);
+
+return (
+  <div className="mb-4">
+    <div className="flex justify-between text-sm text-slate-500 mb-1">
+      <span>Daily Goal: {practiceStatus.progress}/{practiceStatus.dailyGoal} minutes</span>
+      <span>{percentage.toFixed(0)}%</span>
+    </div>
+    <div className="w-full bg-slate-200 rounded-full h-2">
+      <div 
+        className={`h-2 rounded-full ${
+          practiceStatus.isCompleted 
+            ? 'bg-green-500' 
+            : 'bg-gradient-to-r from-cyan-400 to-teal-500'
+        }`}
+        style={{ width: `${percentage}%` }}
+      ></div>
+    </div>
+    {practiceStatus.isCompleted ? (
+      <p className="text-sm text-green-600 mt-1 flex items-center">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+        </svg>
+        Daily goal completed! Keep practicing for extra progress.
+      </p>
+    ) : (
+      <p className="text-sm text-slate-500 mt-1">
+        {practiceStatus.dailyGoal - practiceStatus.progress} minutes remaining to complete your daily goal
+      </p>
+    )}
+  </div>
+);
+};
   
   return (
     <div className="flex flex-col h-full max-h-screen bg-slate-50">
@@ -8495,6 +9363,225 @@ export default function ConversationInterface({ languageCode, userChallengeId })
         </form>
       </div>
       
+    </div>
+  );
+}
+
+================
+File: components/notifications/NotificationCenter.jsx
+================
+// New component for notifications
+// components/notifications/NotificationCenter.jsx
+import { useState, useEffect } from 'react';
+import { formatDistanceToNow } from 'date-fns';
+import { useRouter } from 'next/navigation';
+
+export default function NotificationCenter({ onClose }) {
+  const [notifications, setNotifications] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    fetchNotifications();
+  }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch('/api/notifications');
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch notifications');
+      }
+      
+      const data = await response.json();
+      setNotifications(data);
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      setError('Failed to load notifications');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const markAsRead = async (id) => {
+    try {
+      const response = await fetch(`/api/notifications/${id}/read`, {
+        method: 'POST',
+      });
+      
+      if (response.ok) {
+        // Update locally
+        setNotifications(prev => 
+          prev.map(notif => 
+            notif.id === id ? { ...notif, read: true } : notif
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
+  };
+  
+  const markAllAsRead = async () => {
+    try {
+      const response = await fetch('/api/notifications/read-all', {
+        method: 'POST',
+      });
+      
+      if (response.ok) {
+        // Update locally
+        setNotifications(prev => 
+          prev.map(notif => ({ ...notif, read: true }))
+        );
+      }
+    } catch (error) {
+      console.error('Error marking all notifications as read:', error);
+    }
+  };
+  
+  const handleNotificationClick = (notification) => {
+    // Mark as read
+    markAsRead(notification.id);
+    
+    // Navigate based on notification type
+    switch (notification.type) {
+      case 'CHALLENGE_COMPLETED':
+      case 'CHALLENGE_REMINDER':
+        router.push(`/dashboard/challenges`);
+        break;
+      case 'ACHIEVEMENT_EARNED':
+        router.push(`/dashboard/profile`);
+        break;
+      default:
+        router.push('/dashboard');
+    }
+    
+    // Close notification panel
+    onClose();
+  };
+  
+  // Get icon based on notification type
+  const getNotificationIcon = (type) => {
+    switch (type) {
+      case 'CHALLENGE_COMPLETED':
+        return (
+          <div className="rounded-full bg-green-100 p-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+          </div>
+        );
+      case 'CHALLENGE_REMINDER':
+        return (
+          <div className="rounded-full bg-amber-100 p-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+            </svg>
+          </div>
+        );
+      case 'ACHIEVEMENT_EARNED':
+        return (
+          <div className="rounded-full bg-purple-100 p-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-purple-500" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+            </svg>
+          </div>
+        );
+      default:
+        return (
+          <div className="rounded-full bg-blue-100 p-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
+            </svg>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-hidden" onClick={onClose}>
+      <div className="absolute inset-0 overflow-hidden">
+        <div className="absolute inset-0 bg-gray-500 bg-opacity-75 transition-opacity" />
+        
+        <div className="fixed inset-y-0 right-0 pl-10 max-w-full flex" onClick={e => e.stopPropagation()}>
+          <div className="w-screen max-w-md">
+            <div className="h-full flex flex-col bg-white shadow-xl">
+              <div className="flex-1 overflow-y-auto py-6 px-4 sm:px-6">
+                <div className="flex items-start justify-between">
+                  <h2 className="text-lg font-medium text-gray-900">Notifications</h2>
+                  <div className="ml-3 h-7 flex items-center">
+                    <button
+                      type="button"
+                      className="-m-2 p-2 text-gray-400 hover:text-gray-500"
+                      onClick={onClose}
+                    >
+                      <span className="sr-only">Close panel</span>
+                      <svg className="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {notifications.length > 0 && (
+                  <div className="mt-8">
+                    <button
+                      onClick={markAllAsRead}
+                      className="text-sm text-cyan-600 hover:text-cyan-800"
+                    >
+                      Mark all as read
+                    </button>
+                  </div>
+                )}
+
+                <div className="mt-8">
+                  {isLoading ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
+                    </div>
+                  ) : error ? (
+                    <div className="bg-red-50 text-red-700 p-4 rounded-md">
+                      {error}
+                    </div>
+                  ) : notifications.length === 0 ? (
+                    <div className="text-center py-8 text-gray-500">
+                      No notifications yet
+                    </div>
+                  ) : (
+                    <ul role="list" className="divide-y divide-gray-200">
+                      {notifications.map((notification) => (
+                        <li
+                          key={notification.id}
+                          className={`py-4 flex ${!notification.read ? 'bg-blue-50' : ''}`}
+                          onClick={() => handleNotificationClick(notification)}
+                        >
+                          <div className="ml-3 flex-shrink-0">
+                            {getNotificationIcon(notification.type)}
+                          </div>
+                          <div className="ml-3 flex-1">
+                            <p className="text-sm font-medium text-gray-900">{notification.title}</p>
+                            <p className="text-sm text-gray-500">{notification.message}</p>
+                            <p className="text-xs text-gray-400 mt-1">
+                              {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
+                            </p>
+                          </div>
+                          {!notification.read && (
+                            <div className="flex-shrink-0 ml-2">
+                              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
@@ -8796,92 +9883,105 @@ File: components/ui/LoadingState.jsx
 File: components/ui/TransactionStatus.jsx
 ================
 // components/ui/TransactionStatus.jsx
-  import { useState, useEffect } from 'react';
-  
-  export default function TransactionStatus({ 
-    txHash, 
-    status, 
-    network = 'polygon', 
-    message,
-    onClose
-  }) {
-    const [explorerLink, setExplorerLink] = useState('');
-    
-    useEffect(() => {
-      if (txHash) {
-        // Set the appropriate block explorer URL based on network
-        const baseUrl = 
-          network === 'ethereum' ? 'https://etherscan.io/tx/' :
-          network === 'polygon' ? 'https://polygonscan.com/tx/' :
-          network === 'mumbai' ? 'https://mumbai.polygonscan.com/tx/' :
-          'https://polygonscan.com/tx/'; // Default to polygon
-        
+import { useState, useEffect } from 'react';
+
+export default function TransactionStatus({
+  txHash,
+  status,
+  network = 'polygon',
+  message,
+  onClose
+}) {
+  const [explorerLink, setExplorerLink] = useState('');
+
+  useEffect(() => {
+    if (txHash) {
+      // Set the appropriate block explorer URL based on network
+      const baseUrl =
+        network === 'ethereum' ? 'https://etherscan.io/tx/' :
+        network === 'polygon' ? 'https://polygonscan.com/tx/' :
+        network === 'mumbai' ? 'https://mumbai.polygonscan.com/tx/' :
+        network === 'localhost' ? '' : // No block explorer for localhost
+        'https://polygonscan.com/tx/'; // Default to polygon
+      
+      // If using localhost, don't set an explorer link
+      if (network === 'localhost') {
+        setExplorerLink('');
+      } else {
         setExplorerLink(`${baseUrl}${txHash}`);
       }
-    }, [txHash, network]);
-    
-    const statusColor = 
-      status === 'success' ? 'text-green-600 bg-green-50 border-green-200' :
-      status === 'pending' ? 'text-yellow-600 bg-yellow-50 border-yellow-200' :
-      'text-red-600 bg-red-50 border-red-200';
-    
-    const statusIcon = 
-      status === 'success' ? (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-        </svg>
-      ) : status === 'pending' ? (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      ) : (
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      );
-    
-    return (
-      <div className={`rounded-md border p-4 ${statusColor}`}>
-        <div className="flex">
-          <div className="flex-shrink-0">
-            {statusIcon}
-          </div>
-          <div className="ml-3 flex-1">
-            <h3 className="text-md font-medium">
-              {status === 'success' ? 'Transaction Successful' :
-               status === 'pending' ? 'Transaction Pending' :
-               'Transaction Failed'}
-            </h3>
-            {message && <p className="mt-1 text-sm">{message}</p>}
-            {txHash && (
-              <div className="mt-2">
-                <a 
-                  href={explorerLink} 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="text-sm font-medium underline"
-                >
-                  View on Block Explorer
-                </a>
-              </div>
-            )}
-          </div>
-          {onClose && (
-            <button 
-              type="button" 
-              className="ml-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-500 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 inline-flex h-8 w-8" 
-              onClick={onClose}
-            >
-              <span className="sr-only">Close</span>
-              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path>
-              </svg>
-            </button>
+    }
+  }, [txHash, network]);
+
+  const statusColor =
+    status === 'success' ? 'text-green-600 bg-green-50 border-green-200' :
+    status === 'pending' ? 'text-yellow-600 bg-yellow-50 border-yellow-200' :
+    'text-red-600 bg-red-50 border-red-200';
+
+  const statusIcon =
+    status === 'success' ? (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+      </svg>
+    ) : status === 'pending' ? (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-yellow-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ) : (
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      </svg>
+    );
+
+  return (
+    <div className={`rounded-md border p-4 ${statusColor}`}>
+      <div className="flex">
+        <div className="flex-shrink-0">
+          {statusIcon}
+        </div>
+        <div className="ml-3 flex-1">
+          <h3 className="text-md font-medium">
+            {status === 'success' ? 'Transaction Successful' :
+            status === 'pending' ? 'Transaction Pending' :
+            'Transaction Failed'}
+          </h3>
+          {message && <p className="mt-1 text-sm">{message}</p>}
+          {txHash && explorerLink && (
+            <div className="mt-2">
+              <a
+                href={explorerLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium underline"
+              >
+                View on Block Explorer
+              </a>
+            </div>
+          )}
+          {txHash && !explorerLink && network === 'localhost' && (
+            <div className="mt-2">
+              <span className="text-sm">
+                Transaction ID: {txHash.substring(0, 10)}...
+              </span>
+            </div>
           )}
         </div>
+        {onClose && (
+          <button
+            type="button"
+            className="ml-auto -mx-1.5 -my-1.5 bg-white text-gray-400 hover:text-gray-500 rounded-lg focus:ring-2 focus:ring-gray-300 p-1.5 inline-flex h-8 w-8"
+            onClick={onClose}
+          >
+            <span className="sr-only">Close</span>
+            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd"></path>
+            </svg>
+          </button>
+        )}
       </div>
-    );
-  }
+    </div>
+  );
+}
 
 ================
 File: contracts/StakingChallenge.sol
@@ -10208,9 +11308,6 @@ import { ethers } from 'ethers';
 import stakingABI from '../abis/stakingABI.json';
 import usdcABI from '../abis/usdcABI.json';
 
-const STAKING_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_STAKING_CONTRACT_ADDRESS;
-const USDC_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_USDC_CONTRACT_ADDRESS;
-
 export function useContract() {
   const [stakingContract, setStakingContract] = useState(null);
   const [usdcContract, setUsdcContract] = useState(null);
@@ -10219,85 +11316,197 @@ export function useContract() {
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [networkName, setNetworkName] = useState(null);
+  const [chainId, setChainId] = useState(null);
 
-  useEffect(() => {
-    const initializeProvider = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
+  const STAKING_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_STAKING_CONTRACT_ADDRESS;
+  const USDC_CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_USDC_CONTRACT_ADDRESS;
 
-        // Initialize provider
-        if (typeof window !== 'undefined' && window.ethereum) {
-          const ethProvider = new ethers.BrowserProvider(window.ethereum);
-          setProvider(ethProvider);
+  // Function to initialize provider and contracts
+  const initializeProvider = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
 
-          try {
-            // Get signer (will prompt user to connect if not already connected)
+      // Check if MetaMask is installed
+      if (typeof window !== 'undefined' && window.ethereum) {
+        // Initialize Ethers provider with Web3Provider
+        const ethProvider = new ethers.BrowserProvider(window.ethereum);
+        setProvider(ethProvider);
+
+        // Get network information
+        const network = await ethProvider.getNetwork();
+        setChainId(network.chainId);
+        setNetworkName(network.name);
+
+        try {
+          // Request account access and get signer
+          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+          if (accounts.length > 0) {
             const ethSigner = await ethProvider.getSigner();
             setSigner(ethSigner);
             setIsConnected(true);
 
-            // Initialize contract instances
-            const newStakingContract = new ethers.Contract(
-              STAKING_CONTRACT_ADDRESS,
-              stakingABI,
-              ethSigner
-            );
-            setStakingContract(newStakingContract);
+            // Initialize contract with signer for write operations
+            if (STAKING_CONTRACT_ADDRESS && USDC_CONTRACT_ADDRESS) {
+              const stakingContractWithSigner = new ethers.Contract(
+                STAKING_CONTRACT_ADDRESS,
+                stakingABI,
+                ethSigner
+              );
+              setStakingContract(stakingContractWithSigner);
 
-            const newUsdcContract = new ethers.Contract(
-              USDC_CONTRACT_ADDRESS,
-              usdcABI,
-              ethSigner
-            );
-            setUsdcContract(newUsdcContract);
-          } catch (signerError) {
-            // This might happen if user rejects connection - that's ok
-            console.log("Signer not available:", signerError.message);
-            
-            // Still set up read-only contracts with provider
-            const newStakingContract = new ethers.Contract(
-              STAKING_CONTRACT_ADDRESS,
-              stakingABI,
-              ethProvider
-            );
-            setStakingContract(newStakingContract);
-
-            const newUsdcContract = new ethers.Contract(
-              USDC_CONTRACT_ADDRESS,
-              usdcABI,
-              ethProvider
-            );
-            setUsdcContract(newUsdcContract);
+              const usdcContractWithSigner = new ethers.Contract(
+                USDC_CONTRACT_ADDRESS,
+                usdcABI,
+                ethSigner
+              );
+              setUsdcContract(usdcContractWithSigner);
+            } else {
+              setError("Contract addresses not configured in environment");
+            }
+          } else {
             setIsConnected(false);
+            // Initialize read-only contracts with provider
+            initializeReadOnlyContracts(ethProvider);
           }
-        } else {
-          setError('No Ethereum provider detected. Please install MetaMask or similar.');
+        } catch (signerError) {
+          console.log("Wallet connection not available:", signerError.message);
           setIsConnected(false);
+          // Initialize read-only contracts with provider
+          initializeReadOnlyContracts(ethProvider);
         }
-      } catch (err) {
-        console.error('Error initializing contracts:', err);
-        setError(err.message || 'Failed to initialize contracts');
-      } finally {
-        setIsLoading(false);
+      } else {
+        setError('No Ethereum provider detected. Please install MetaMask.');
+        setIsConnected(false);
       }
-    };
+    } catch (err) {
+      console.error('Error initializing contracts:', err);
+      setError(err.message || 'Failed to initialize contracts');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
+  // Initialize read-only contract instances
+  const initializeReadOnlyContracts = (provider) => {
+    if (STAKING_CONTRACT_ADDRESS && USDC_CONTRACT_ADDRESS) {
+      const stakingContractReadOnly = new ethers.Contract(
+        STAKING_CONTRACT_ADDRESS,
+        stakingABI,
+        provider
+      );
+      setStakingContract(stakingContractReadOnly);
+
+      const usdcContractReadOnly = new ethers.Contract(
+        USDC_CONTRACT_ADDRESS,
+        usdcABI,
+        provider
+      );
+      setUsdcContract(usdcContractReadOnly);
+    }
+  };
+
+  // Connect wallet function that can be called from UI
+  const connectWallet = async () => {
+    if (typeof window !== 'undefined' && window.ethereum) {
+      try {
+        await window.ethereum.request({ method: 'eth_requestAccounts' });
+        await initializeProvider(); // Reinitialize after connection
+        return true;
+      } catch (error) {
+        console.error("User denied account access", error);
+        setError("Please connect your wallet to continue");
+        return false;
+      }
+    } else {
+      setError('Please install MetaMask to use this feature');
+      return false;
+    }
+  };
+
+  // Check if on correct network (Local Hardhat for development)
+  const checkNetwork = async () => {
+    if (!provider) return false;
+    
+    const network = await provider.getNetwork();
+    // Local Hardhat network has chainId 1337
+    return network.chainId.toString() === "1337";
+  };
+
+  // Switch to Local Network
+  const switchToLocalNetwork = async () => {
+    if (!window.ethereum) return false;
+    
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x539' }], // Chain ID for local network in hex (1337)
+      });
+      
+      // Reinitialize provider after switching networks
+      setTimeout(() => {
+        initializeProvider();
+      }, 1000);
+      
+      return true;
+    } catch (switchError) {
+      // If the network is not added to MetaMask, add it
+      if (switchError.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [{
+              chainId: '0x539',
+              chainName: 'Localhost 8545',
+              nativeCurrency: {
+                name: 'ETH',
+                symbol: 'ETH',
+                decimals: 18
+              },
+              rpcUrls: ['http://127.0.0.1:8545/'],
+              blockExplorerUrls: []
+            }],
+          });
+          
+          // Reinitialize provider after adding network
+          setTimeout(() => {
+            initializeProvider();
+          }, 1000);
+          
+          return true;
+        } catch (addError) {
+          console.error("Error adding local network:", addError);
+          return false;
+        }
+      }
+      console.error("Error switching network:", switchError);
+      return false;
+    }
+  };
+
+  // Initialize on component mount
+  useEffect(() => {
     initializeProvider();
 
-    // Set up event listeners for account changes
+    // Listen for account changes
     if (typeof window !== 'undefined' && window.ethereum) {
       const handleAccountsChanged = () => {
-        // Reinitialize on account change
+        // Re-initialize on account change
         initializeProvider();
       };
 
+      const handleChainChanged = () => {
+        // Reload the page on chain change as recommended by MetaMask
+        window.location.reload();
+      };
+
       window.ethereum.on('accountsChanged', handleAccountsChanged);
-      window.ethereum.on('chainChanged', handleAccountsChanged);
+      window.ethereum.on('chainChanged', handleChainChanged);
 
       return () => {
         window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum.removeListener('chainChanged', handleAccountsChanged);
+        window.ethereum.removeListener('chainChanged', handleChainChanged);
       };
     }
   }, []);
@@ -10310,6 +11519,11 @@ export function useContract() {
     isConnected,
     isLoading,
     error,
+    networkName,
+    chainId,
+    connectWallet,
+    checkNetwork,
+    switchToLocalNetwork
   };
 }
 
@@ -10361,18 +11575,10 @@ export function useStaking() {
       setStakingError(null);
       setStakingSuccess(false);
       
-      // First approve USDC spending
-      try {
-        await approveUSDC(amount);
-      } catch (approvalError) {
-        setStakingError(`Failed to approve USDC: ${approvalError.message}`);
-        setIsStaking(false);
-        return null;
-      }
-      
-      // Then stake for the challenge
+      // Convert to USDC units (6 decimals)
       const usdcAmount = ethers.parseUnits(amount.toString(), 6);
       
+      // Stake for the challenge
       const tx = await stakingContract.stakeForChallenge(
         challengeId,
         usdcAmount,
@@ -10405,7 +11611,7 @@ export function useStaking() {
     } finally {
       setIsStaking(false);
     }
-  }, [stakingContract, approveUSDC, isConnected]);
+  }, [stakingContract, isConnected]);
 
   // Function to withdraw from a non-hardcore challenge
   const withdrawFromChallenge = useCallback(async (challengeId) => {
@@ -10495,38 +11701,51 @@ export function useStaking() {
   };
 }
 
+================
+File: lib/web3/hooks/useYield.js
+================
 // lib/web3/hooks/useYield.js
-import { useState, useEffect, useCallback } from 'react';
-import { ethers } from 'ethers';
-import { useContract } from './useContract';
+import { useState, useEffect } from 'react';
 
-// This hook manages the yield calculation and projection
 export function useYield(stakedAmount, yieldPercentage, durationDays) {
   const [projectedReward, setProjectedReward] = useState(0);
   const [dailyYield, setDailyYield] = useState(0);
   const [apy, setApy] = useState(0);
   
   useEffect(() => {
-    if (!stakedAmount || !yieldPercentage || !durationDays) {
-      setProjectedReward(0);
-      setDailyYield(0);
-      setApy(0);
-      return;
-    }
+    const calculateYield = () => {
+      if (!stakedAmount || !yieldPercentage || !durationDays) {
+        setProjectedReward(0);
+        setDailyYield(0);
+        setApy(0);
+        return;
+      }
+      
+      // Parse inputs to ensure numerical operations
+      const stake = parseFloat(stakedAmount);
+      const yieldPct = parseFloat(yieldPercentage);
+      const duration = parseInt(durationDays);
+      
+      if (isNaN(stake) || isNaN(yieldPct) || isNaN(duration) || duration <= 0) {
+        return;
+      }
+      
+      // Calculate projected reward
+      const yieldAmount = (stake * yieldPct) / 100;
+      const totalReward = stake + yieldAmount;
+      setProjectedReward(totalReward);
+      
+      // Calculate daily yield
+      const daily = yieldAmount / duration;
+      setDailyYield(daily);
+      
+      // Calculate APY
+      const yearlyYield = (yieldAmount / duration) * 365;
+      const calculatedApy = (yearlyYield / stake) * 100;
+      setApy(calculatedApy);
+    };
     
-    // Calculate projected reward
-    const yieldAmount = (parseFloat(stakedAmount) * parseFloat(yieldPercentage)) / 100;
-    const totalReward = parseFloat(stakedAmount) + yieldAmount;
-    setProjectedReward(totalReward);
-    
-    // Calculate daily yield
-    const daily = yieldAmount / durationDays;
-    setDailyYield(daily);
-    
-    // Calculate APY
-    const yearlyYield = (yieldAmount / durationDays) * 365;
-    const calculatedApy = (yearlyYield / parseFloat(stakedAmount)) * 100;
-    setApy(calculatedApy);
+    calculateYield();
   }, [stakedAmount, yieldPercentage, durationDays]);
   
   return {
@@ -10535,8 +11754,6 @@ export function useYield(stakedAmount, yieldPercentage, durationDays) {
     apy
   };
 }
-
-// lib/web3/abis/usdcABI.json would need to be created as a separate file
 
 ================
 File: lib/web3/providers.js
@@ -11187,6 +12404,7 @@ enum NotificationType {
   CHALLENGE_COMPLETED
   STAKE_CONFIRMED
   REWARD_DISTRIBUTED
+  CHALLENGE_CREATED
 }
 
 // Financial transactions

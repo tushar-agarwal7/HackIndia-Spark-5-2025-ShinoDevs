@@ -1,5 +1,4 @@
-'use client';
-
+// Updated JoinChallengeFlow.jsx
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStaking } from '@/lib/web3/hooks/useStaking';
@@ -8,16 +7,18 @@ import { useYield } from '@/lib/web3/hooks/useYield';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 import ErrorMessage from '@/components/ui/ErrorMessage';
 import TransactionStatus from '@/components/ui/TransactionStatus';
+import { ethers } from 'ethers';
 
 export default function JoinChallengeFlow({ challenge, onSuccess, onCancel }) {
   const router = useRouter();
-  const { isConnected, signer } = useContract();
+  const { isConnected, signer, usdcContract, stakingContract } = useContract();
   const { stakeForChallenge, isStaking, stakingError, transaction, stakingSuccess } = useStaking();
   const { projectedReward, apy } = useYield(challenge.stakeAmount, challenge.yieldPercentage, challenge.durationDays);
   
   const [step, setStep] = useState('confirmation'); // confirmation, staking, result
   const [walletAddress, setWalletAddress] = useState('');
   const [error, setError] = useState(null);
+  const [stakingStage, setStakingStage] = useState(null); // 'approving', 'staking', 'confirming'
   
   // Get connected wallet address
   useEffect(() => {
@@ -49,8 +50,56 @@ export default function JoinChallengeFlow({ challenge, onSuccess, onCancel }) {
     }
   }, [stakingError]);
   
-// Enhanced staking function in JoinChallengeFlow.jsx
+// Replace the approveUSDC function with this improved version:
+const approveUSDC = async (amount) => {
+  if (!usdcContract || !stakingContract || !isConnected) {
+    throw new Error('Wallet not connected or contracts not initialized');
+  }
+  
+  try {
+    setError(null);
+    console.log("Approving USDC amount:", amount);
+    
+    // Convert amount to USDC units (6 decimals)
+    const usdcAmount = ethers.parseUnits(amount.toString(), 6);
+    console.log("USDC amount in wei:", usdcAmount.toString());
+    
+    // Get contract target address
+    const stakingAddress = stakingContract.target;
+    console.log("Staking contract address:", stakingAddress);
+    
+    // Check if already approved
+    const userAddress = await signer.getAddress();
+    const allowance = await usdcContract.allowance(userAddress, stakingAddress);
+    console.log("Current allowance:", allowance.toString());
+    
+    if (allowance >= usdcAmount) {
+      console.log("USDC already approved");
+      return { success: true };
+    }
+    
+    // Approve staking contract to spend USDC with explicit gas settings
+    console.log("Sending approval transaction...");
+    const tx = await usdcContract.approve(stakingAddress, usdcAmount, {
+      gasLimit: 100000 // Add explicit gas limit
+    });
+    console.log('Approval transaction submitted:', tx.hash);
+    
+    // Wait for confirmation
+    console.log("Waiting for approval confirmation...");
+    const receipt = await tx.wait();
+    console.log('Approval transaction confirmed:', receipt);
+    
+    return { success: true, hash: receipt.hash };
+  } catch (error) {
+    console.error('Error approving USDC:', error);
+    throw error;
+  }
+};
+
+// Replace the handleJoinChallenge function with this improved version:
 const handleJoinChallenge = async () => {
+  console.log('Joining challenge...');
   setError(null);
   
   if (!isConnected) {
@@ -64,10 +113,22 @@ const handleJoinChallenge = async () => {
     
     // 1. First approve USDC spending
     try {
-      const approvalTx = await approveUSDC(challenge.stakeAmount);
+      console.log("Starting USDC approval process...");
+      console.log("Challenge details:", {
+        id: challenge.id,
+        stakeAmount: challenge.stakeAmount,
+        isHardcore: challenge.isHardcore
+      });
+      
+      const approvalResult = await approveUSDC(challenge.stakeAmount);
       setStakingStage('staking');
-      console.log('USDC approval confirmed:', approvalTx);
+      console.log('USDC approval confirmed:', approvalResult);
+      
+      // Add small delay after approval to ensure blockchain state is updated
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
     } catch (approvalError) {
+      console.error("Approval error:", approvalError);
       if (approvalError.code === 4001) {
         throw new Error('You rejected the approval transaction. Please approve USDC spending to continue.');
       }
@@ -76,19 +137,27 @@ const handleJoinChallenge = async () => {
     
     // 2. Stake for the challenge
     try {
+      console.log("Starting staking process...");
+      
+      // Make sure we're passing booleans correctly
+      const isHardcoreValue = Boolean(challenge.isHardcore);
+      console.log("Is Hardcore (converted to boolean):", isHardcoreValue);
+      
       const stakingTxHash = await stakeForChallenge(
         challenge.id,
         challenge.stakeAmount,
-        challenge.isHardcore
+        isHardcoreValue
       );
       
       if (!stakingTxHash) {
         throw new Error('Failed to stake. Please try again.');
       }
       
+      console.log("Staking transaction successful:", stakingTxHash);
       setStakingStage('confirming');
       
       // 3. Register participation on backend
+      console.log("Registering challenge participation...");
       const joinResponse = await fetch('/api/challenges/join', {
         method: 'POST',
         headers: {
@@ -106,12 +175,14 @@ const handleJoinChallenge = async () => {
       }
       
       const joinData = await joinResponse.json();
+      console.log("Join challenge API response:", joinData);
       
       // 4. Success - call onSuccess callback with complete data
       if (onSuccess) {
-        onSuccess(stakingTxHash, joinData);
+        onSuccess(stakingTxHash);
       }
     } catch (stakingError) {
+      console.error("Staking error:", stakingError);
       if (stakingError.code === 4001) {
         throw new Error('You rejected the staking transaction. Please approve the transaction to join the challenge.');
       }
@@ -121,6 +192,36 @@ const handleJoinChallenge = async () => {
     console.error('Error joining challenge:', error);
     setError(error.message || 'Failed to join challenge');
     setStep('confirmation'); // Go back to confirmation step on error
+  }
+};
+
+const testBasicStaking = async () => {
+  try {
+    // Use a very short string for testing
+    const simpleId = "test1";
+    const amount = ethers.parseUnits("1", 6); // Just 1 USDC
+    
+    console.log("Attempting basic test with very simple parameters:");
+    console.log("- Challenge ID:", simpleId);
+    console.log("- Amount:", amount.toString());
+    console.log("- isHardcore:", false);
+    
+    const tx = await stakingContract.stakeForChallenge(
+      simpleId,
+      amount,
+      false,
+      { gasLimit: 300000 }
+    );
+    
+    console.log("Test transaction sent:", tx.hash);
+    return `Test transaction sent: ${tx.hash}`;
+  } catch (error) {
+    console.error("Test error details:", {
+      message: error.message,
+      code: error.code,
+      reason: error.reason,
+    });
+    return `Test failed: ${error.message}`;
   }
 };
 
@@ -203,8 +304,14 @@ const handleJoinChallenge = async () => {
           Cancel
         </button>
         <button
+  onClick={async () => alert(await testBasicStaking())}
+  className="px-4 py-2 bg-yellow-200 text-yellow-700 rounded-md mr-2"
+>
+  Test Basic Staking
+</button>
+        <button
           onClick={handleJoinChallenge}
-          className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 text-white rounded-md hover:from-cyan-600 hover:to-teal-600"
+          className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 text-white rounded-md hover:from-cyan-600 hover:to-teal-600 cursor-pointer"
           disabled={!isConnected}
         >
           {isConnected ? 'Join Challenge' : 'Connect Wallet to Join'}
@@ -213,16 +320,62 @@ const handleJoinChallenge = async () => {
     </div>
   );
   
-  // Staking Step (loading)
+  // Staking Step (loading) with detailed substages
   const renderStaking = () => (
     <div className="space-y-6 text-center py-8">
       <LoadingSpinner size="large" />
       <div>
-        <h2 className="text-xl font-bold text-gray-900 mb-2">Staking in Progress</h2>
-        <p className="text-gray-500">
-          Please confirm the transaction in your wallet.<br />
-          Do not close this window until the transaction is complete.
+        <h2 className="text-xl font-bold text-gray-900 mb-2">Joining Challenge</h2>
+        <p className="text-gray-600">
+          {stakingStage === 'approving' ? 'Approving USDC spending...' : 
+           stakingStage === 'staking' ? 'Staking tokens for challenge...' :
+           stakingStage === 'confirming' ? 'Finalizing participation...' :
+           'Processing transaction...'}
         </p>
+        <p className="text-sm text-gray-500 mt-4">
+          Please confirm the transaction in your wallet.<br />
+          Do not close this window until the process is complete.
+        </p>
+      </div>
+      
+      {/* Progress indicator */}
+      <div className="max-w-md mx-auto">
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-between">
+            <div>
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                stakingStage === 'approving' ? 'bg-cyan-600 text-white' : 
+                stakingStage === 'staking' || stakingStage === 'confirming' ? 'bg-green-600 text-white' : 
+                'bg-gray-300 text-gray-700'
+              }`}>
+                1
+              </span>
+              <span className="mt-2 block text-xs font-medium text-gray-700">Approve</span>
+            </div>
+            <div>
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                stakingStage === 'staking' ? 'bg-cyan-600 text-white' : 
+                stakingStage === 'confirming' ? 'bg-green-600 text-white' : 
+                'bg-gray-300 text-gray-700'
+              }`}>
+                2
+              </span>
+              <span className="mt-2 block text-xs font-medium text-gray-700">Stake</span>
+            </div>
+            <div>
+              <span className={`flex h-8 w-8 items-center justify-center rounded-full ${
+                stakingStage === 'confirming' ? 'bg-cyan-600 text-white' : 
+                'bg-gray-300 text-gray-700'
+              }`}>
+                3
+              </span>
+              <span className="mt-2 block text-xs font-medium text-gray-700">Confirm</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

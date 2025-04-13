@@ -300,6 +300,7 @@ enum NotificationType {
   CHALLENGE_COMPLETED
   STAKE_CONFIRMED
   REWARD_DISTRIBUTED
+  CHALLENGE_CREATED
 }
 
 // Financial transactions

@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import PracticeChart from '@/components/dashboard/PracticeChart';
 import DashboardLayout from '@/components/layout/DashboardLayout';
 import { format, subDays, eachDayOfInterval } from 'date-fns';
 
@@ -195,19 +196,17 @@ export default function StatisticsPage() {
             />
           </div> */}
           
-          {/* Practice Chart */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden mb-8">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h2 className="text-xl font-bold text-slate-800">Practice Minutes</h2>
-            </div>
-            
-            <div className="p-6">
-              <div className="h-64">
-                {/* <PracticeChart data={chartData} /> */}
-              </div>
-            </div>
-          </div>
-          
+  <div className="px-6 py-4 border-b border-slate-100">
+    <h2 className="text-xl font-bold text-slate-800">Practice Minutes</h2>
+  </div>
+  
+  <div className="p-6">
+    <div className="h-64">
+      <PracticeChart data={chartData} />
+    </div>
+  </div>
+</div>
           {/* Current Streaks */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden mb-8">
             <div className="px-6 py-4 border-b border-slate-100">

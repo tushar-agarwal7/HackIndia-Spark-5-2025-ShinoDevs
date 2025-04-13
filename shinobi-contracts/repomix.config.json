@@ -1,0 +1,17 @@
+{
+    "include": [
+      "app",
+      "components",
+      "contracts",
+      "lib",
+      "prisma/schema.prisma"
+    ],
+    "exclude": [
+      "prisma/migrations",
+      "public",
+      "node_modules",
+      ".git",
+      ".next"
+    ]
+  }
+  

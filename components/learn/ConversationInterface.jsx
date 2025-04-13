@@ -19,6 +19,8 @@ export default function ConversationInterface({ languageCode, userChallengeId })
   const [sessionStartTime, setSessionStartTime] = useState(null);
   const messagesEndRef = useRef(null);
   const router = useRouter();
+
+  const [practiceTimeSeconds, setPracticeTimeSeconds] = useState(0);
   
   // Initialize practice session and fetch daily goal
   useEffect(() => {
@@ -45,56 +47,67 @@ export default function ConversationInterface({ languageCode, userChallengeId })
     setSessionStartTime(new Date());
   }, [userChallengeId]);
   
-  // Timer for practice tracking - update every minute
   useEffect(() => {
     let timer;
+    
     if (sessionStartTime) {
       // Initial calculation
       const calculatePracticeTime = () => {
         const now = new Date();
-        const elapsedMinutes = Math.floor((now - sessionStartTime) / 60000);
-        setPracticeTime(elapsedMinutes);
+        const elapsedSeconds = Math.floor((now - sessionStartTime) / 1000);
+        setPracticeTimeSeconds(elapsedSeconds);
         
-        // Update progress if part of a challenge
-        if (userChallengeId) {
-          setPracticeStatus(prev => ({
-            ...prev,
-            progress: prev.progress + 1,
-            isCompleted: prev.progress + 1 >= prev.dailyGoal
-          }));
-          
-          // Send progress update to server
-          updatePracticeProgress(elapsedMinutes);
+        // Update minutes for display (rounded down)
+        const minutes = Math.floor(elapsedSeconds / 60);
+        setPracticeTime(minutes);
+        
+        // Only update progress on minute boundaries
+        if (elapsedSeconds % 60 === 0 && elapsedSeconds > 0 && userChallengeId) {
+          // Update progress in database - we update every minute
+          updatePracticeProgress(1);
         }
       };
       
-      // Set timer to run every minute
-      timer = setInterval(calculatePracticeTime, 60000);
+      // Set timer to run every second for smooth countdown
+      timer = setInterval(calculatePracticeTime, 1000);
     }
     
     return () => clearInterval(timer);
   }, [sessionStartTime, userChallengeId]);
+
   
-  // Function to update practice progress on server
   const updatePracticeProgress = async (minutes) => {
-    if (!userChallengeId) return;
+    if (!userChallengeId || minutes <= 0) return;
     
     try {
-      await fetch('/api/challenges/update-progress', {
+      const response = await fetch('/api/challenges/update-progress', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           userChallengeId,
-          minutes: 1 // We track 1 minute at a time
+          minutes,
+          conversationId
         }),
       });
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Update local state with the response
+        setPracticeStatus(prev => ({
+          ...prev,
+          progress: data.minutesPracticed,
+          isCompleted: data.completed
+        }));
+      }
     } catch (error) {
       console.error('Error updating practice progress:', error);
     }
   };
   
+
+
   // Start conversation with initial greeting
   useEffect(() => {
     const startConversation = async () => {
@@ -197,78 +210,97 @@ export default function ConversationInterface({ languageCode, userChallengeId })
     }
   };
   
-  const handleEndSession = async () => {
-    try {
-      // Calculate final practice time
-      const finalMinutes = practiceTime;
-      
-      // Ensure we save the final practice minutes
-      if (userChallengeId && finalMinutes > 0) {
-        await fetch('/api/challenges/update-progress', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            userChallengeId,
-            minutes: finalMinutes,
-            isSessionEnd: true,
-            conversationId
-          }),
-        });
-      }
-      
-      // Optionally get a summary of the session
-      if (conversationId) {
-        await fetch('/api/conversation/evaluate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            conversationId
-          }),
-        });
-      }
-      
-      router.push('/dashboard');
-    } catch (error) {
-      console.error('Error ending session:', error);
-      router.push('/dashboard');
-    }
-  };
-
-
-  const renderProgressBar = () => {
-    if (!userChallengeId) return null;
-    
-    const percentage = Math.min(100, (practiceStatus.progress / practiceStatus.dailyGoal) * 100);
-    
-    return (
-      <div className="mb-4">
-        <div className="flex justify-between text-sm text-slate-500 mb-1">
-          <span>Daily Goal: {practiceStatus.progress}/{practiceStatus.dailyGoal} minutes</span>
-          <span>{percentage.toFixed(0)}%</span>
-        </div>
-        <div className="w-full bg-slate-200 rounded-full h-2">
-          <div 
-            className={`h-2 rounded-full ${
-              practiceStatus.isCompleted 
-                ? 'bg-green-500' 
-                : 'bg-gradient-to-r from-cyan-400 to-teal-500'
-            }`}
-            style={{ width: `${percentage}%` }}
-          ></div>
-        </div>
-        {practiceStatus.isCompleted && (
-          <p className="text-sm text-green-600 mt-1">
-            ✓ Daily goal completed! Keep practicing for extra progress.
-          </p>
-        )}
-      </div>
-    );
-  };
   
+
+// Improved end session function to ensure we record the final minutes
+const handleEndSession = async () => {
+try {
+  // Calculate final practice time in minutes (rounded up to give user benefit)
+  const finalMinutes = Math.ceil(practiceTimeSeconds / 60);
+  
+  // Ensure we save the final practice minutes
+  if (userChallengeId && finalMinutes > 0) {
+    await fetch('/api/challenges/update-progress', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        userChallengeId,
+        minutes: finalMinutes,
+        isSessionEnd: true,
+        conversationId
+      }),
+    });
+  }
+  
+  // Optionally get a summary of the session
+  if (conversationId && messages.length >= 5) {
+    try {
+      const evalResponse = await fetch('/api/conversation/evaluate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          conversationId
+        }),
+      });
+      
+      if (evalResponse.ok) {
+        const evalData = await evalResponse.json();
+        // Could show a summary modal here before redirecting
+        console.log('Conversation evaluation:', evalData);
+      }
+    } catch (evalError) {
+      console.error('Error evaluating conversation:', evalError);
+    }
+  }
+  
+  router.push('/dashboard');
+} catch (error) {
+  console.error('Error ending session:', error);
+  router.push('/dashboard');
+}
+};
+
+// Improved progress bar with better visual feedback
+const renderProgressBar = () => {
+if (!userChallengeId) return null;
+
+const percentage = Math.min(100, (practiceStatus.progress / practiceStatus.dailyGoal) * 100);
+
+return (
+  <div className="mb-4">
+    <div className="flex justify-between text-sm text-slate-500 mb-1">
+      <span>Daily Goal: {practiceStatus.progress}/{practiceStatus.dailyGoal} minutes</span>
+      <span>{percentage.toFixed(0)}%</span>
+    </div>
+    <div className="w-full bg-slate-200 rounded-full h-2">
+      <div 
+        className={`h-2 rounded-full ${
+          practiceStatus.isCompleted 
+            ? 'bg-green-500' 
+            : 'bg-gradient-to-r from-cyan-400 to-teal-500'
+        }`}
+        style={{ width: `${percentage}%` }}
+      ></div>
+    </div>
+    {practiceStatus.isCompleted ? (
+      <p className="text-sm text-green-600 mt-1 flex items-center">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+        </svg>
+        Daily goal completed! Keep practicing for extra progress.
+      </p>
+    ) : (
+      <p className="text-sm text-slate-500 mt-1">
+        {practiceStatus.dailyGoal - practiceStatus.progress} minutes remaining to complete your daily goal
+      </p>
+    )}
+  </div>
+);
+};
   
   return (
     <div className="flex flex-col h-full max-h-screen bg-slate-50">

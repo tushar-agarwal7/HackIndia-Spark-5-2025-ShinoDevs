@@ -1,60 +1,28 @@
-
-
 // components/dashboard/RecentActivity.jsx
 import { useState, useEffect } from 'react';
 
 export default function RecentActivity() {
   const [activities, setActivities] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   useEffect(() => {
-    // This would normally fetch real activities from an API
-    // For now, we'll use dummy data
+    // Fetch real activity data from API
     const fetchActivities = async () => {
       setIsLoading(true);
       try {
-        // In a real app, you would fetch activities from the server
-        // const response = await fetch('/api/activities');
-        // const data = await response.json();
+        const response = await fetch('/api/users/activity');
         
-        // Dummy data for now
-        const dummyData = [
-          {
-            id: '1',
-            type: 'practice',
-            language: 'ja',
-            details: 'Completed 15 minute conversation',
-            timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '2',
-            type: 'challenge',
-            language: 'ja',
-            details: 'Joined "60-Day Japanese Immersion"',
-            timestamp: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '3',
-            type: 'achievement',
-            language: 'ja',
-            details: 'Earned "5-Day Streak" badge',
-            timestamp: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '4',
-            type: 'practice',
-            language: 'es',
-            details: 'Learned 20 new vocabulary words',
-            timestamp: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          },
-        ];
+        if (!response.ok) {
+          throw new Error('Failed to fetch activity data');
+        }
         
-        setTimeout(() => {
-          setActivities(dummyData);
-          setIsLoading(false);
-        }, 500);
+        const data = await response.json();
+        setActivities(data.activities || []);
       } catch (error) {
         console.error('Error fetching activities:', error);
+        setError(error.message);
+      } finally {
         setIsLoading(false);
       }
     };
@@ -144,7 +112,8 @@ export default function RecentActivity() {
         );
     }
   };
-if (isLoading) {
+
+  if (isLoading) {
     return (
       <div className="space-y-4">
         {[1, 2, 3].map((item) => (
@@ -156,6 +125,15 @@ if (isLoading) {
             </div>
           </div>
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-50 text-red-700 border border-red-200 rounded-md p-4">
+        <p className="font-medium">Error loading activities</p>
+        <p className="text-sm">{error}</p>
       </div>
     );
   }

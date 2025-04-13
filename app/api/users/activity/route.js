@@ -13,67 +13,81 @@ export async function GET(request) {
   }
   
   try {
-    // Get query parameters
-    const searchParams = request.nextUrl.searchParams;
-    const period = searchParams.get('period') || 'week'; // 'week', 'month'
+    // Get combination of different activity types
+    const userId = auth.userId;
     
-    // Calculate date range
-    const endDate = new Date();
-    const startDate = new Date();
-    
-    if (period === 'week') {
-      startDate.setDate(startDate.getDate() - 7);
-    } else {
-      startDate.setMonth(startDate.getMonth() - 1);
-    }
-    
-    // Get practice minutes
-    const practiceMinutes = await prisma.dailyProgress.findMany({
-      where: {
-        userChallenge: {
-          userId: auth.userId
-        },
-        date: {
-          gte: startDate,
-          lte: endDate
-        }
-      },
-      select: {
-        date: true,
-        minutesPracticed: true,
-        userChallenge: {
-          select: {
-            challenge: {
-              select: {
-                languageCode: true
-              }
-            }
-          }
+    // Get recent conversations
+    const conversations = await prisma.aIConversation.findMany({
+      where: { userId },
+      orderBy: { startedAt: 'desc' },
+      take: 5,
+      include: {
+        messages: {
+          take: 1,
+          orderBy: { timestamp: 'desc' }
         }
       }
     });
     
-    // Aggregate practice minutes by day and language
-    const practiceByDay = {};
-    
-    practiceMinutes.forEach(record => {
-      const lang = record.userChallenge.challenge.languageCode;
-      const dateStr = record.date.toISOString().split('T')[0]; // YYYY-MM-DD
-      
-      if (!practiceByDay[dateStr]) {
-        practiceByDay[dateStr] = {};
+    // Get challenge activities
+    const challengeActivities = await prisma.userChallenge.findMany({
+      where: { userId },
+      orderBy: { startDate: 'desc' },
+      take: 5,
+      include: {
+        challenge: true
       }
-      
-      if (!practiceByDay[dateStr][lang]) {
-        practiceByDay[dateStr][lang] = 0;
-      }
-      
-      practiceByDay[dateStr][lang] += record.minutesPracticed;
     });
     
-    return NextResponse.json({ practiceByDay });
+    // Get achievements
+    const achievements = await prisma.userAchievement.findMany({
+      where: { userId },
+      orderBy: { earnedAt: 'desc' },
+      take: 5,
+      include: {
+        achievement: true
+      }
+    });
+    
+    // Combine and format activities
+    const formattedActivities = [
+      // Format conversation activities
+      ...conversations.map(conv => ({
+        id: `conv-${conv.id}`,
+        type: 'practice',
+        language: conv.languageCode,
+        details: `Practiced ${conv.durationMinutes || 0} minutes of conversation`,
+        timestamp: conv.startedAt.toISOString()
+      })),
+      
+      // Format challenge activities
+      ...challengeActivities.map(uc => ({
+        id: `challenge-${uc.id}`,
+        type: 'challenge',
+        language: uc.challenge.languageCode,
+        details: `${uc.status === 'ACTIVE' ? 'Joined' : uc.status === 'COMPLETED' ? 'Completed' : 'Participated in'} "${uc.challenge.title}"`,
+        timestamp: uc.startDate.toISOString()
+      })),
+      
+      // Format achievement activities
+      ...achievements.map(ua => ({
+        id: `achievement-${ua.id}`,
+        type: 'achievement',
+        language: '', // Achievement might not have a specific language
+        details: `Earned "${ua.achievement.name}" achievement`,
+        timestamp: ua.earnedAt.toISOString()
+      }))
+    ];
+    
+    // Sort by timestamp, most recent first
+    formattedActivities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
+    // Return the top 10 activities
+    return NextResponse.json({ 
+      activities: formattedActivities.slice(0, 10) 
+    });
   } catch (error) {
-    console.error('Error fetching activity data:', error);
-    return NextResponse.json({ error: 'Failed to fetch activity data' }, { status: 500 });
+    console.error('Error fetching user activities:', error);
+    return NextResponse.json({ error: 'Failed to fetch activities' }, { status: 500 });
   }
 }

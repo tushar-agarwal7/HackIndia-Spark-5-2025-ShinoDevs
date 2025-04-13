@@ -1,4 +1,3 @@
-
 // components/dashboard/LanguageStats.jsx
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -6,6 +5,7 @@ import Link from 'next/link';
 export default function LanguageStats({ languageCode, proficiencyLevel }) {
   const [stats, setStats] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
   
   // Get language name from language code
   const getLanguageName = (code) => {
@@ -41,34 +41,30 @@ export default function LanguageStats({ languageCode, proficiencyLevel }) {
   };
   
   useEffect(() => {
-    // This would normally fetch real stats from an API
-    // For now, we'll use dummy data
-    const fetchStats = async () => {
+    const fetchLanguageStats = async () => {
       setIsLoading(true);
+      setError(null);
+      
       try {
-        // In a real app, you would fetch stats from the server
-        // const response = await fetch(`/api/stats/language/${languageCode}`);
-        // const data = await response.json();
+        const response = await fetch(`/api/users/language-stats?languageCode=${languageCode}`);
         
-        // Dummy data for now
-        const dummyData = {
-          streak: Math.floor(Math.random() * 30),
-          vocabularySize: Math.floor(Math.random() * 2000) + 100,
-          minutesPracticed: Math.floor(Math.random() * 500) + 50,
-          lastPracticed: new Date(Date.now() - Math.floor(Math.random() * 7 * 24 * 60 * 60 * 1000)).toISOString(),
-        };
+        if (!response.ok) {
+          throw new Error('Failed to fetch language statistics');
+        }
         
-        setTimeout(() => {
-          setStats(dummyData);
-          setIsLoading(false);
-        }, 500);
+        const data = await response.json();
+        setStats(data);
       } catch (error) {
         console.error('Error fetching language stats:', error);
+        setError(error.message);
+      } finally {
         setIsLoading(false);
       }
     };
     
-    fetchStats();
+    if (languageCode) {
+      fetchLanguageStats();
+    }
   }, [languageCode]);
   
   // Format date as relative time (e.g., "2 days ago")
@@ -94,6 +90,23 @@ export default function LanguageStats({ languageCode, proficiencyLevel }) {
         <div className="h-2 bg-gray-200 rounded mb-2.5"></div>
         <div className="h-2 bg-gray-200 rounded mb-2.5"></div>
         <div className="h-2 bg-gray-200 rounded"></div>
+      </div>
+    );
+  }
+  
+  if (error) {
+    return (
+      <div className="border border-red-200 rounded-lg p-4 bg-red-50 text-red-700">
+        <p className="font-medium">Error loading language statistics</p>
+        <p className="text-sm">{error}</p>
+      </div>
+    );
+  }
+  
+  if (!stats) {
+    return (
+      <div className="border border-gray-200 rounded-lg p-4 text-center">
+        <p className="text-gray-500">No statistics available for this language.</p>
       </div>
     );
   }
@@ -126,15 +139,15 @@ export default function LanguageStats({ languageCode, proficiencyLevel }) {
         <div className="grid grid-cols-2 gap-4 mb-4">
           <div>
             <div className="text-sm text-gray-500">Current streak</div>
-            <div className="font-bold text-lg">{stats.streak} days</div>
+            <div className="font-bold text-lg">{stats.currentStreak || 0} days</div>
           </div>
           <div>
             <div className="text-sm text-gray-500">Vocabulary size</div>
-            <div className="font-bold text-lg">{stats.vocabularySize} words</div>
+            <div className="font-bold text-lg">{stats.vocabularySize || 0} words</div>
           </div>
           <div>
             <div className="text-sm text-gray-500">Total practice time</div>
-            <div className="font-bold text-lg">{stats.minutesPracticed} min</div>
+            <div className="font-bold text-lg">{stats.totalMinutesPracticed || 0} min</div>
           </div>
           <div>
             <div className="text-sm text-gray-500">Last practiced</div>

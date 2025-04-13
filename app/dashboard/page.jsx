@@ -16,154 +16,119 @@ export default function Dashboard() {
   const [activityData, setActivityData] = useState([]);
   const [error, setError] = useState(null);
   
-  useEffect(() => {
-    // Fetch user profile and challenges
-    async function fetchUserData() {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        // Fetch user profile
-        const profileRes = await fetch('/api/users/profile');
-        if (!profileRes.ok) {
-          if (profileRes.status === 401) {
-            // Redirect to login if unauthorized
-            router.push('/auth/signin');
-            return;
-          }
-          throw new Error('Failed to fetch user profile');
+
+useEffect(() => {
+  // Fetch user profile and challenges
+  async function fetchUserData() {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Fetch user profile
+      const profileRes = await fetch('/api/users/profile');
+      if (!profileRes.ok) {
+        if (profileRes.status === 401) {
+          // Redirect to login if unauthorized
+          router.push('/auth/signin');
+          return;
         }
-        const profileData = await profileRes.json();
-        
-        // Fetch user stats
-        const statsRes = await fetch('/api/users/analytics');
-        let statsData = {};
-        if (statsRes.ok) {
-          const analyticsData = await statsRes.json();
-          statsData = {
-            totalMinutesPracticed: analyticsData.summary?.totalPracticeMinutes || 0,
-            vocabularySize: analyticsData.progressRecords?.[0]?.vocabularySize || 0,
-            currentStreak: Object.values(analyticsData.streaksByLanguage || {})[0] || 0,
-            longestStreak: analyticsData.progressRecords?.[0]?.longestStreak || 0
-          };
-        }
-        
-        // Combine profile with stats
-        const fullProfile = {
-          ...profileData,
-          stats: statsData
+        throw new Error('Failed to fetch user profile');
+      }
+      const profileData = await profileRes.json();
+      
+      // Fetch user stats
+      const statsRes = await fetch('/api/users/analytics');
+      let statsData = {};
+      if (statsRes.ok) {
+        const analyticsData = await statsRes.json();
+        statsData = {
+          totalMinutesPracticed: analyticsData.summary?.totalPracticeMinutes || 0,
+          vocabularySize: analyticsData.progressRecords?.[0]?.vocabularySize || 0,
+          currentStreak: Object.values(analyticsData.streaksByLanguage || {})[0] || 0,
+          longestStreak: analyticsData.progressRecords?.[0]?.longestStreak || 0
         };
-        setProfile(fullProfile);
+      }
+      
+      // Combine profile with stats
+      const fullProfile = {
+        ...profileData,
+        stats: statsData
+      };
+      setProfile(fullProfile);
+      
+      // Fetch active challenges
+      const challengesRes = await fetch('/api/challenges/user?status=ACTIVE');
+      if (challengesRes.ok) {
+        const challengesData = await challengesRes.json();
+        setActiveChallenges(challengesData);
         
-        // Fetch active challenges
-        const challengesRes = await fetch('/api/challenges/user?status=ACTIVE');
-        if (challengesRes.ok) {
-          const challengesData = await challengesRes.json();
-          
-          // Transform challenge data to match the expected format
-          const formattedChallenges = challengesData.map(challenge => {
-            const startDate = new Date(challenge.startDate);
-            const endDate = new Date(challenge.endDate);
-            const today = new Date();
-            const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-            
-            return {
-              id: challenge.challengeId,
-              title: challenge.challenge.title,
-              languageCode: challenge.challenge.languageCode,
-              proficiencyLevel: challenge.challenge.proficiencyLevel,
-              durationDays: challenge.challenge.durationDays,
-              daysLeft: daysLeft > 0 ? daysLeft : 0,
-              dailyRequirement: challenge.challenge.dailyRequirement,
-              stakeAmount: challenge.stakedAmount,
-              progress: challenge.progressPercentage
-            };
+        // Set today's challenge if there are active challenges
+        if (challengesData.length > 0) {
+          // Prioritize the challenge with the lowest days left
+          const sortedChallenges = [...challengesData].sort((a, b) => {
+            const aEndDate = new Date(a.endDate);
+            const bEndDate = new Date(b.endDate);
+            return aEndDate - bEndDate;
           });
           
-          setActiveChallenges(formattedChallenges);
+          const nextChallenge = sortedChallenges[0];
           
-          // Set today's challenge if there are active challenges
-          if (formattedChallenges.length > 0) {
-            // Prioritize the challenge with the lowest days left
-            const sortedChallenges = [...formattedChallenges].sort((a, b) => a.daysLeft - b.daysLeft);
-            const nextChallenge = sortedChallenges[0];
-            
-            // Fetch today's exercise for this challenge
-            try {
-              const exerciseRes = await fetch(`/api/challenges/${nextChallenge.id}/daily-exercise`);
-              if (exerciseRes.ok) {
-                const exerciseData = await exerciseRes.json();
-                setTodayChallenge({
-                  id: nextChallenge.id,
-                  title: nextChallenge.title,
-                  description: exerciseData.description || "Continue your daily practice to maintain your streak!",
-                  exercise: exerciseData.exercise || `Practice ${nextChallenge.dailyRequirement} minutes of ${nextChallenge.languageCode === 'ja' ? 'Japanese' : nextChallenge.languageCode === 'ko' ? 'Korean' : 'language'} today.`,
-                  languageCode: nextChallenge.languageCode
-                });
-              } else {
-                // Fallback if no specific exercise
-                setTodayChallenge({
-                  id: nextChallenge.id,
-                  title: nextChallenge.title,
-                  description: "Continue your daily practice to maintain your streak!",
-                  exercise: `Practice ${nextChallenge.dailyRequirement} minutes of ${nextChallenge.languageCode === 'ja' ? 'Japanese' : nextChallenge.languageCode === 'ko' ? 'Korean' : 'language'} today.`,
-                  languageCode: nextChallenge.languageCode
-                });
-              }
-            } catch (exerciseError) {
-              console.error('Error fetching daily exercise:', exerciseError);
-              // Fallback
+          // Fetch today's exercise for this challenge
+          try {
+            const exerciseRes = await fetch(`/api/challenges/${nextChallenge.challengeId}/daily-exercise`);
+            if (exerciseRes.ok) {
+              const exerciseData = await exerciseRes.json();
               setTodayChallenge({
-                id: nextChallenge.id,
-                title: nextChallenge.title,
-                description: "Continue your daily practice to maintain your streak!",
-                exercise: `Practice ${nextChallenge.dailyRequirement} minutes of ${nextChallenge.languageCode === 'ja' ? 'Japanese' : nextChallenge.languageCode === 'ko' ? 'Korean' : 'language'} today.`,
-                languageCode: nextChallenge.languageCode
+                id: nextChallenge.challengeId,
+                title: nextChallenge.challenge.title,
+                description: exerciseData.description || "Continue your daily practice to maintain your streak!",
+                exercise: exerciseData.exercise || `Practice ${nextChallenge.challenge.dailyRequirement} minutes of ${getLanguageName(nextChallenge.challenge.languageCode)} today.`,
+                languageCode: nextChallenge.challenge.languageCode
               });
             }
+          } catch (exerciseError) {
+            console.error('Error fetching daily exercise:', exerciseError);
           }
         }
-        
-        // Fetch weekly activity data
-        const activityRes = await fetch('/api/users/activity?period=week');
-        if (activityRes.ok) {
-          const activityData = await activityRes.json();
-          
-          // Transform activity data to match the expected format
-          const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-          const today = new Date();
-          const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
-          
-          const weeklyActivity = days.map((day, index) => {
-            const isToday = index === dayOfWeek;
-            const dateStr = getDateString(new Date(today.getTime() - ((dayOfWeek - index + 7) % 7) * 24 * 60 * 60 * 1000));
-            const minutesForDay = activityData.practiceByDay?.[dateStr] ? 
-              Object.values(activityData.practiceByDay[dateStr]).reduce((sum, val) => sum + val, 0) : 0;
-            
-            return {
-              day,
-              minutes: minutesForDay,
-              isToday
-            };
-          });
-          
-          setActivityData(weeklyActivity);
-        } else {
-          // Fallback to dummy data if API fails
-          const dummyActivity = generateDummyActivityData();
-          setActivityData(dummyActivity);
-        }
-        
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        setError(error.message);
-        setIsLoading(false);
       }
+      
+      // Fetch weekly activity data
+      const activityRes = await fetch('/api/users/activity?period=week');
+      if (activityRes.ok) {
+        const activityData = await activityRes.json();
+        
+        // Transform activity data to match the expected format for the chart
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const today = new Date();
+        const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
+        
+        const weeklyActivity = days.map((day, index) => {
+          const isToday = index === dayOfWeek;
+          const dateStr = getDateString(new Date(today.getTime() - ((dayOfWeek - index + 7) % 7) * 24 * 60 * 60 * 1000));
+          const minutesForDay = activityData.practiceByDay?.[dateStr] ? 
+            Object.values(activityData.practiceByDay[dateStr]).reduce((sum, val) => sum + val, 0) : 0;
+          
+          return {
+            day,
+            minutes: minutesForDay,
+            isToday
+          };
+        });
+        
+        setActivityData(weeklyActivity);
+      }
+      
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error);
+      setError(error.message);
+      setIsLoading(false);
     }
-    
-    fetchUserData();
-  }, [router]);
+  }
+  
+  fetchUserData();
+}, [router]);
+
   
   // Helper function to generate date string in YYYY-MM-DD format
   const getDateString = (date) => {

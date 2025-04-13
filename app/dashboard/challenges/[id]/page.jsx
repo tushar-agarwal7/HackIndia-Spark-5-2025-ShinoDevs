@@ -9,10 +9,11 @@ import { useStaking } from '@/lib/web3/hooks/useStaking';
 import { useContract } from '@/lib/web3/hooks/useContract';
 import LoadingState from '@/components/ui/LoadingState';
 import ErrorMessage from '@/components/ui/ErrorMessage';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 export default function ChallengePage({ params }) {
   const router = useRouter();
-  const { id } = params;
+  const id = params.id;
   const [challenge, setChallenge] = useState(null);
   const [userParticipation, setUserParticipation] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -152,15 +153,53 @@ export default function ChallengePage({ params }) {
             </div>
           </div>
           
-          {/* Complete challenge button - only if challenge is active and progress is sufficient */}
-          {status === 'ACTIVE' && progressPercentage >= 80 && (
-            <button
-              onClick={handleCompleteChallenge}
-              className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-6 py-3 rounded-lg font-medium shadow-md transition-all"
-            >
-              Complete Challenge & Claim Rewards
-            </button>
-          )}
+          {userParticipation.status === 'ACTIVE' && userParticipation.progressPercentage >= 80 && (
+  <div>
+    {completionError && (
+      <div className="mb-4 bg-red-50 text-red-700 border border-red-200 rounded-md p-3">
+        <p className="font-medium">Error completing challenge</p>
+        <p className="text-sm">{completionError}</p>
+      </div>
+    )}
+    
+    <button
+      onClick={handleCompleteChallenge}
+      disabled={isCompletingChallenge}
+      className="w-full bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white px-6 py-3 rounded-lg font-medium shadow-md transition-all disabled:opacity-50 flex items-center justify-center"
+    >
+      {isCompletingChallenge ? (
+        <>
+          <LoadingSpinner size="small" color="white" className="mr-2" />
+          Processing...
+        </>
+      ) : (
+        'Complete Challenge & Claim Rewards'
+      )}
+    </button>
+  </div>
+)}
+
+{/* Show completion status if available */}
+{completionStatus && (
+  <div className={`mt-4 p-4 rounded-md ${
+    completionStatus.success ? 'bg-green-50 border border-green-200 text-green-700' : 
+    'bg-red-50 border border-red-200 text-red-700'
+  }`}>
+    <p className="font-medium">{completionStatus.success ? 'Success!' : 'Error'}</p>
+    <p className="text-sm mt-1">{completionStatus.message}</p>
+    
+    {completionStatus.transactionHash && (
+      <a 
+        href={`https://mumbai.polygonscan.com/tx/${completionStatus.transactionHash}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs mt-2 inline-block underline"
+      >
+        View transaction
+      </a>
+    )}
+  </div>
+)}
           
           {/* If challenge is completed */}
           {status === 'COMPLETED' && (
@@ -186,7 +225,6 @@ export default function ChallengePage({ params }) {
     );
   };
   
-  // Add this handler for the complete challenge button
   const handleCompleteChallenge = async () => {
     if (!userParticipation || userParticipation.status !== 'ACTIVE') {
       return;
@@ -194,6 +232,7 @@ export default function ChallengePage({ params }) {
     
     try {
       setIsCompletingChallenge(true);
+      setCompletionError(null);
       
       const res = await fetch('/api/challenges/complete', {
         method: 'POST',
@@ -225,6 +264,7 @@ export default function ChallengePage({ params }) {
       }, 3000);
     } catch (error) {
       console.error('Error completing challenge:', error);
+      setCompletionError(error.message || 'Failed to complete challenge');
       setCompletionStatus({
         success: false,
         message: error.message || 'Failed to complete challenge'
@@ -233,6 +273,7 @@ export default function ChallengePage({ params }) {
       setIsCompletingChallenge(false);
     }
   };
+
   
   const handleJoinSuccess = (txHash) => {
     // Refresh the page data after successful join
