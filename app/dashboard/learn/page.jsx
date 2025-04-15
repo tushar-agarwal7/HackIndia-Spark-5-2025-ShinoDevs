@@ -1,19 +1,20 @@
-// app/dashboard/learn/page.jsx
 'use client';
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import ConversationInterface from '@/components/learn/ConversationInterface';
+import Link from 'next/link';
+import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
 
 export default function LearnPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [userChallenge, setUserChallenge] = useState(null);
+  const [userChallengeId, setUserChallengeId] = useState(null);
   const [challengeId, setChallengeId] = useState(null);
   const [languageCode, setLanguageCode] = useState('en');
+  const [proficiencyLevel, setProficiencyLevel] = useState('BEGINNER');
   const [isLoading, setIsLoading] = useState(true);
-  const [showConversation, setShowConversation] = useState(false);
+  const [practiceInfo, setPracticeInfo] = useState(null);
   
   useEffect(() => {
     async function fetchUserChallengeData() {
@@ -30,13 +31,23 @@ export default function LearnPage() {
           if (res.ok) {
             const data = await res.json();
             if (data.length > 0) {
-              setUserChallenge(data[0]);
+              setUserChallengeId(data[0].id);
               
               // Fetch language code from challenge
               const challengeRes = await fetch(`/api/challenges/${id}`);
               if (challengeRes.ok) {
                 const challengeData = await challengeRes.json();
                 setLanguageCode(challengeData.languageCode);
+                setProficiencyLevel(challengeData.proficiencyLevel);
+                
+                // Fetch practice info
+                if (data[0].id) {
+                  const practiceInfoRes = await fetch(`/api/challenges/practice-info?userChallengeId=${data[0].id}`);
+                  if (practiceInfoRes.ok) {
+                    const practiceData = await practiceInfoRes.json();
+                    setPracticeInfo(practiceData);
+                  }
+                }
               }
             }
           }
@@ -47,6 +58,7 @@ export default function LearnPage() {
             const userData = await userRes.json();
             if (userData.learningLanguages && userData.learningLanguages.length > 0) {
               setLanguageCode(userData.learningLanguages[0].languageCode);
+              setProficiencyLevel(userData.learningLanguages[0].proficiencyLevel);
             }
           }
         }
@@ -60,156 +72,314 @@ export default function LearnPage() {
     fetchUserChallengeData();
   }, [searchParams]);
   
-  const handleStartConversation = () => {
-    setShowConversation(true);
+  // Format language name
+  const getLanguageName = (code) => {
+    const languages = {
+      'en': 'English',
+      'es': 'Spanish',
+      'fr': 'French',
+      'de': 'German',
+      'it': 'Italian',
+      'ja': 'Japanese',
+      'ko': 'Korean',
+      'zh': 'Chinese',
+      'ru': 'Russian',
+      'pt': 'Portuguese',
+      'ar': 'Arabic',
+      'hi': 'Hindi'
+    };
+    
+    return languages[code] || code;
   };
   
-  if (showConversation) {
+  // Format language flag emoji
+  const getLanguageFlag = (code) => {
+    const flags = {
+      'ja': '🇯🇵',
+      'ko': '🇰🇷',
+      'zh': '🇨🇳',
+      'en': '🇬🇧',
+      'es': '🇪🇸',
+      'fr': '🇫🇷',
+      'de': '🇩🇪',
+      'it': '🇮🇹',
+      'ru': '🇷🇺',
+      'pt': '🇵🇹',
+      'ar': '🇸🇦', 
+      'hi': '🇮🇳'
+    };
+    
+    return flags[code] || '🌐';
+  };
+  
+  // Generate URL with parameters
+  const getLearningModuleUrl = (path) => {
+    const params = new URLSearchParams();
+    if (challengeId) {
+      params.append('challengeId', challengeId);
+    } else {
+      params.append('language', languageCode);
+    }
+    
+    return `${path}?${params.toString()}`;
+  };
+  
+  if (isLoading) {
     return (
-      <ConversationInterface 
-        languageCode={languageCode} 
-        userChallengeId={userChallenge?.id}
-      />
+      <DashboardLayout>
+        <div className="container mx-auto py-8">
+          <div className="flex justify-center items-center h-64">
+            <LoadingSpinner size="large" />
+          </div>
+        </div>
+      </DashboardLayout>
     );
   }
   
   return (
     <DashboardLayout>
       <div className="container mx-auto px-4 py-8">
-        <div className="max-w-3xl mx-auto">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden mb-8">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h1 className="text-2xl font-bold text-slate-800 flex items-center">
-                <span className="text-3xl mr-3">
-                  {languageCode === 'ja' ? '🇯🇵' : 
-                   languageCode === 'ko' ? '🇰🇷' : 
-                   languageCode === 'zh' ? '🇨🇳' : 
-                   languageCode === 'en' ? '🇬🇧' : 
-                   languageCode === 'es' ? '🇪🇸' : 
-                   languageCode === 'fr' ? '🇫🇷' : '🌐'}
-                </span>
-                {languageCode === 'ja' ? 'Japanese' : 
-                 languageCode === 'ko' ? 'Korean' : 
-                 languageCode === 'zh' ? 'Chinese' : 
-                 languageCode === 'en' ? 'English' : 
-                 languageCode === 'es' ? 'Spanish' : 
-                 languageCode === 'fr' ? 'French' : 'Language'} Practice
-              </h1>
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="mb-8">
+            <div className="flex items-center mb-4">
+              <span className="text-3xl mr-3">{getLanguageFlag(languageCode)}</span>
+              <h1 className="text-2xl font-bold text-slate-800">{getLanguageName(languageCode)} Learning</h1>
             </div>
             
+            {practiceInfo && (
+              <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-6">
+                <div className="flex justify-between mb-2">
+                  <span className="text-slate-700">Daily Goal</span>
+                  <span className="font-medium">
+                    {practiceInfo.todayProgress}/{practiceInfo.dailyRequirement} minutes
+                  </span>
+                </div>
+                <div className="w-full bg-slate-200 rounded-full h-2 mb-2">
+                  <div 
+                    className={`h-2 rounded-full ${practiceInfo.todayCompleted ? 'bg-green-500' : 'bg-gradient-to-r from-cyan-400 to-teal-500'}`}
+                    style={{ width: `${Math.min(100, (practiceInfo.todayProgress / practiceInfo.dailyRequirement) * 100)}%` }}
+                  ></div>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-slate-500">Current streak: {practiceInfo.currentStreak} days</span>
+                  <span className="text-slate-500">Proficiency: {proficiencyLevel.charAt(0) + proficiencyLevel.slice(1).toLowerCase()}</span>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Learning Modules Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Conversation Practice */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+              <div className="p-6">
+                <div className="flex items-center mb-4">
+                  <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-800">Conversation Practice</h2>
+                </div>
+                
+                <p className="text-slate-600 mb-6">
+                  Practice natural conversation with our AI tutor. Receive instant feedback and corrections to improve your speaking skills.
+                </p>
+                
+                <Link 
+                  href={getLearningModuleUrl("/dashboard/learn/conversation")}
+                  className="block w-full py-3 px-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-center rounded-lg font-medium hover:from-blue-600 hover:to-blue-700 transition-colors"
+                >
+                  Start Conversation
+                </Link>
+              </div>
+            </div>
+            
+            {/* Vocabulary Practice */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+              <div className="p-6">
+                <div className="flex items-center mb-4">
+                  <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center text-purple-600 mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-800">Vocabulary Practice</h2>
+                </div>
+                
+                <p className="text-slate-600 mb-6">
+                  Expand your vocabulary with interactive exercises. Learn new words and test your knowledge with quizzes.
+                </p>
+                
+                <Link 
+                  href={getLearningModuleUrl("/dashboard/learn/vocabulary")}
+                  className="block w-full py-3 px-4 bg-gradient-to-r from-purple-500 to-purple-600 text-white text-center rounded-lg font-medium hover:from-purple-600 hover:to-purple-700 transition-colors"
+                >
+                  Practice Vocabulary
+                </Link>
+              </div>
+            </div>
+            
+            {/* Grammar Exercises */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+              <div className="p-6">
+                <div className="flex items-center mb-4">
+                  <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center text-green-600 mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-800">Grammar Exercises</h2>
+                </div>
+                
+                <p className="text-slate-600 mb-6">
+                  Master grammar rules through interactive exercises. Practice sentence structure, verb conjugation, and more.
+                </p>
+                
+                <Link 
+                  href={getLearningModuleUrl("/dashboard/learn/grammar")}
+                  className="block w-full py-3 px-4 bg-gradient-to-r from-green-500 to-green-600 text-white text-center rounded-lg font-medium hover:from-green-600 hover:to-green-700 transition-colors"
+                >
+                  Practice Grammar
+                </Link>
+              </div>
+            </div>
+            
+            {/* Speaking Practice */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+              <div className="p-6">
+                <div className="flex items-center mb-4">
+                  <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center text-amber-600 mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-800">Speaking Practice</h2>
+                </div>
+                
+                <p className="text-slate-600 mb-6">
+                  Improve your pronunciation with our speech recognition technology. Get feedback on your accent and speaking clarity.
+                </p>
+                
+                <Link 
+                  href={getLearningModuleUrl("/dashboard/learn/speaking")}
+                  className="block w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 text-white text-center rounded-lg font-medium hover:from-amber-600 hover:to-amber-700 transition-colors"
+                >
+                  Practice Speaking
+                </Link>
+              </div>
+            </div>
+            
+            {/* Listening Comprehension */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+              <div className="p-6">
+                <div className="flex items-center mb-4">
+                  <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600 mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.465a5 5 0 001.414 1.414m-.707-10.607a5 5 0 00-1.414 1.414m14.242 0a9 9 0 00-1.414-1.414m-12.02 12.02a9 9 0 001.414 1.414" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-800">Listening Comprehension</h2>
+                </div>
+                
+                <p className="text-slate-600 mb-6">
+                  Train your ear to understand native speakers. Listen to audio clips and answer comprehension questions.
+                </p>
+                
+                <Link 
+                  href={getLearningModuleUrl("/dashboard/learn/listening")}
+                  className="block w-full py-3 px-4 bg-gradient-to-r from-red-500 to-red-600 text-white text-center rounded-lg font-medium hover:from-red-600 hover:to-red-700 transition-colors"
+                >
+                  Practice Listening
+                </Link>
+              </div>
+            </div>
+            
+            {/* Daily Challenge */}
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
+              <div className="p-6">
+                <div className="flex items-center mb-4">
+                  <div className="w-12 h-12 bg-cyan-100 rounded-full flex items-center justify-center text-cyan-600 mr-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                    </svg>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-800">Daily Challenge</h2>
+                </div>
+                
+                <p className="text-slate-600 mb-6">
+                  Complete today's challenge to maintain your streak and earn rewards. Mixed exercises to test all your skills.
+                </p>
+                
+                <Link 
+                  href={getLearningModuleUrl("/dashboard/learn/daily-challenge")}
+                  className="block w-full py-3 px-4 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white text-center rounded-lg font-medium hover:from-cyan-600 hover:to-cyan-700 transition-colors"
+                >
+                  Start Daily Challenge
+                </Link>
+              </div>
+            </div>
+          </div>
+          
+          {/* Learning Tips */}
+          <div className="mt-10 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h2 className="text-xl font-bold text-slate-800">Tips to Maximize Your Learning</h2>
+            </div>
             <div className="p-6">
-              {userChallenge ? (
-                <div className="mb-6">
-                  <h2 className="font-medium text-slate-800 mb-2">Challenge Progress</h2>
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                    <div className="flex justify-between mb-2">
-                      <span className="text-slate-600">Daily Goal:</span>
-                      <span className="font-medium text-slate-800">
-                        0/{userChallenge.challenge?.dailyRequirement} minutes
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-200 rounded-full h-2 mb-4">
-                      <div className="bg-gradient-to-r from-cyan-500 to-teal-500 h-2 rounded-full w-0"></div>
-                    </div>
-                    <div className="text-sm text-slate-500">
-                      Complete {userChallenge.challenge?.dailyRequirement} minutes of practice today to maintain your streak.
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="mb-6">
-                  <div className="bg-amber-50 p-4 rounded-lg border border-amber-100">
-                    <h2 className="font-medium text-amber-800 mb-2">Free Practice Session</h2>
-                    <p className="text-slate-600">
-                      You're in free practice mode. Consider joining a challenge to track your progress 
-                      and earn rewards for consistent practice.
-                    </p>
-                  </div>
-                </div>
-              )}
-              
-              <div className="mb-6">
-                <h2 className="font-medium text-slate-800 mb-2">Practice Options</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 hover:border-cyan-300 cursor-pointer" onClick={handleStartConversation}>
-                    <h3 className="font-medium text-slate-700 flex items-center mb-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-cyan-500" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
-                      </svg>
-                      Free Conversation
-                    </h3>
-                    <p className="text-sm text-slate-600">
-                      Practice natural conversation on any topic with our AI language tutor.
-                    </p>
-                  </div>
-                  
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 hover:border-cyan-300 cursor-pointer">
-                    <h3 className="font-medium text-slate-700 flex items-center mb-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-cyan-500" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M9 4.804A7.968 7.968 0 005.5 4c-1.255 0-2.443.29-3.5.804v10A7.969 7.969 0 015.5 14c1.669 0 3.218.51 4.5 1.385A7.962 7.962 0 0114.5 14c1.255 0 2.443.29 3.5.804v-10A7.968 7.968 0 0014.5 4c-1.255 0-2.443.29-3.5.804V12a1 1 0 11-2 0V4.804z" />
-                      </svg>
-                      Vocabulary Practice
-                    </h3>
-                    <p className="text-sm text-slate-600">
-                      Focus on expanding your vocabulary with targeted exercises.
-                    </p>
-                  </div>
-                  
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 hover:border-cyan-300 cursor-pointer">
-                    <h3 className="font-medium text-slate-700 flex items-center mb-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-cyan-500" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 10a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zM3 15a1 1 0 011-1h6a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
-                      </svg>
-                      Grammar Exercises
-                    </h3>
-                    <p className="text-sm text-slate-600">
-                      Practice specific grammar points with structured exercises.
-                    </p>
-                  </div>
-                  
-                  <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 hover:border-cyan-300 cursor-pointer">
-                    <h3 className="font-medium text-slate-700 flex items-center mb-2">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-cyan-500" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                      </svg>
-                      Listening Comprehension
-                    </h3>
-                    <p className="text-sm text-slate-600">
-                      Improve your listening skills with audio exercises and questions.
-                    </p>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-teal-50 p-4 rounded-lg border border-teal-100">
-                <h2 className="font-medium text-teal-800 mb-2">AI Tutor Tips</h2>
-                <ul className="text-sm text-slate-600 space-y-2">
-                  <li className="flex items-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-teal-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              <ul className="space-y-4">
+                <li className="flex">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
-                    Try to speak in complete sentences to get better feedback.
-                  </li>
-                  <li className="flex items-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-teal-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </span>
+                  <p className="text-slate-700">
+                    <span className="font-medium">Practice daily:</span> Consistent practice is more effective than occasional long sessions.
+                  </p>
+                </li>
+                <li className="flex">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
-                    The AI will provide corrections in [brackets] when you make mistakes.
-                  </li>
-                  <li className="flex items-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-teal-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </span>
+                  <p className="text-slate-700">
+                    <span className="font-medium">Mix learning methods:</span> Combine vocabulary, grammar, speaking, and listening for balanced progress.
+                  </p>
+                </li>
+                <li className="flex">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
-                    Don't hesitate to ask the AI to explain grammar or vocabulary.
-                  </li>
-                  <li className="flex items-start">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2 text-teal-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </span>
+                  <p className="text-slate-700">
+                    <span className="font-medium">Learn through conversation:</span> Real dialogue practice helps internalize grammar and vocabulary.
+                  </p>
+                </li>
+                <li className="flex">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                     </svg>
-                    Practice for at least 15-20 minutes for the best learning experience.
-                  </li>
-                </ul>
-              </div>
+                  </span>
+                  <p className="text-slate-700">
+                    <span className="font-medium">Set specific goals:</span> Having clear objectives helps you stay motivated and measure progress.
+                  </p>
+                </li>
+                <li className="flex">
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-green-100 flex items-center justify-center text-green-600 mr-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </span>
+                  <p className="text-slate-700">
+                    <span className="font-medium">Track your progress:</span> Regularly review your statistics to see improvement and identify areas to focus on.
+                  </p>
+                </li>
+              </ul>
             </div>
           </div>
         </div>

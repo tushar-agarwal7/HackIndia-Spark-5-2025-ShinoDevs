@@ -1,11 +1,11 @@
-// app/dashboard/page.jsx
+// app/dashboard/page.jsx - Improved version with real data fetching
 'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { LoadingSpinner } from '@/components/ui/LoadingSpinner'; 
+import ErrorMessage from '@/components/ui/ErrorMessage';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -15,137 +15,156 @@ export default function Dashboard() {
   const [todayChallenge, setTodayChallenge] = useState(null);
   const [activityData, setActivityData] = useState([]);
   const [error, setError] = useState(null);
-  
+  const [learningStats, setLearningStats] = useState({
+    totalMinutesPracticed: 0,
+    vocabularySize: 0,
+    currentStreak: 0,
+    longestStreak: 0
+  });
 
-useEffect(() => {
-  // Fetch user profile and challenges
-  async function fetchUserData() {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Fetch user profile
-      const profileRes = await fetch('/api/users/profile');
-      if (!profileRes.ok) {
+  useEffect(() => {
+    // Main data fetching function to load all dashboard data
+    async function fetchDashboardData() {
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Fetch all data in parallel for efficiency
+        const [profileRes, challengesRes, analyticsRes, activityRes] = await Promise.all([
+          fetch('/api/users/profile'),
+          fetch('/api/challenges/user?status=ACTIVE'),
+          fetch('/api/users/analytics'),
+          fetch('/api/users/activity')
+        ]);
+
+        // Handle any authentication errors
         if (profileRes.status === 401) {
-          // Redirect to login if unauthorized
           router.push('/auth/signin');
           return;
         }
-        throw new Error('Failed to fetch user profile');
-      }
-      const profileData = await profileRes.json();
-      
-      // Fetch user stats
-      const statsRes = await fetch('/api/users/analytics');
-      let statsData = {};
-      if (statsRes.ok) {
-        const analyticsData = await statsRes.json();
-        statsData = {
-          totalMinutesPracticed: analyticsData.summary?.totalPracticeMinutes || 0,
-          vocabularySize: analyticsData.progressRecords?.[0]?.vocabularySize || 0,
-          currentStreak: Object.values(analyticsData.streaksByLanguage || {})[0] || 0,
-          longestStreak: analyticsData.progressRecords?.[0]?.longestStreak || 0
-        };
-      }
-      
-      // Combine profile with stats
-      const fullProfile = {
-        ...profileData,
-        stats: statsData
-      };
-      setProfile(fullProfile);
-      
-      // Fetch active challenges
-      const challengesRes = await fetch('/api/challenges/user?status=ACTIVE');
-      if (challengesRes.ok) {
+
+        // Handle other error responses
+        if (!profileRes.ok) throw new Error('Failed to fetch user profile');
+        if (!challengesRes.ok) throw new Error('Failed to fetch active challenges');
+        
+        // Parse response data
+        const profileData = await profileRes.json();
         const challengesData = await challengesRes.json();
+        
+        // Set profile data
+        setProfile(profileData);
+        
+        // Set active challenges
         setActiveChallenges(challengesData);
         
-        // Set today's challenge if there are active challenges
-        if (challengesData.length > 0) {
-          // Prioritize the challenge with the lowest days left
-          const sortedChallenges = [...challengesData].sort((a, b) => {
-            const aEndDate = new Date(a.endDate);
-            const bEndDate = new Date(b.endDate);
-            return aEndDate - bEndDate;
+        // Process analytics data if available
+        if (analyticsRes.ok) {
+          const analyticsData = await analyticsRes.json();
+          setLearningStats({
+            totalMinutesPracticed: analyticsData.summary?.totalPracticeMinutes || 0,
+            vocabularySize: analyticsData.progressRecords?.[0]?.vocabularySize || 0,
+            currentStreak: Object.values(analyticsData.streaksByLanguage || {})[0] || 0,
+            longestStreak: analyticsData.progressRecords?.[0]?.longestStreak || 0
           });
           
-          const nextChallenge = sortedChallenges[0];
-          
-          // Fetch today's exercise for this challenge
-          try {
-            const exerciseRes = await fetch(`/api/challenges/${nextChallenge.challengeId}/daily-exercise`);
-            if (exerciseRes.ok) {
-              const exerciseData = await exerciseRes.json();
-              setTodayChallenge({
-                id: nextChallenge.challengeId,
-                title: nextChallenge.challenge.title,
-                description: exerciseData.description || "Continue your daily practice to maintain your streak!",
-                exercise: exerciseData.exercise || `Practice ${nextChallenge.challenge.dailyRequirement} minutes of ${getLanguageName(nextChallenge.challenge.languageCode)} today.`,
-                languageCode: nextChallenge.challenge.languageCode
-              });
-            }
-          } catch (exerciseError) {
-            console.error('Error fetching daily exercise:', exerciseError);
+          // Process activity data for the chart
+          if (analyticsData.practiceByDay) {
+            const formattedActivity = formatActivityData(analyticsData.practiceByDay);
+            setActivityData(formattedActivity);
           }
         }
-      }
-      
-      // Fetch weekly activity data
-      const activityRes = await fetch('/api/users/activity?period=week');
-      if (activityRes.ok) {
-        const activityData = await activityRes.json();
-        
-        // Transform activity data to match the expected format for the chart
-        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        const today = new Date();
-        const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
-        
-        const weeklyActivity = days.map((day, index) => {
-          const isToday = index === dayOfWeek;
-          const dateStr = getDateString(new Date(today.getTime() - ((dayOfWeek - index + 7) % 7) * 24 * 60 * 60 * 1000));
-          const minutesForDay = activityData.practiceByDay?.[dateStr] ? 
-            Object.values(activityData.practiceByDay[dateStr]).reduce((sum, val) => sum + val, 0) : 0;
-          
-          return {
-            day,
-            minutes: minutesForDay,
-            isToday
-          };
-        });
-        
-        setActivityData(weeklyActivity);
-      }
-      
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
-      setError(error.message);
-      setIsLoading(false);
-    }
-  }
-  
-  fetchUserData();
-}, [router]);
 
+        // Process activity data if available
+        if (activityRes.ok) {
+          const activityData = await activityRes.json();
+          if (!activityData.activities) {
+            console.warn('Activity data missing expected structure:', activityData);
+          }
+        }
+
+        // Setup today's challenge if there are active challenges
+        if (challengesData.length > 0) {
+          await setupTodayChallenge(challengesData[0]);
+        }
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+        setError(error.message || 'Failed to load dashboard data');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    fetchDashboardData();
+  }, [router]);
+
+  // Helper function to setup today's challenge
+  const setupTodayChallenge = async (challenge) => {
+    try {
+      // Fetch the daily exercise data for this challenge
+      const exerciseRes = await fetch(`/api/challenges/${challenge.challengeId}/daily-exercise`);
+      
+      if (exerciseRes.ok) {
+        const exerciseData = await exerciseRes.json();
+        
+        setTodayChallenge({
+          id: challenge.challengeId,
+          title: challenge.challenge.title,
+          description: exerciseData.description || "Continue your daily practice to maintain your streak!",
+          exercise: exerciseData.exercise || `Practice ${challenge.challenge.dailyRequirement} minutes of ${getLanguageName(challenge.challenge.languageCode)} today.`,
+          languageCode: challenge.challenge.languageCode,
+          progress: challenge.progressPercentage,
+          dailyRequirement: challenge.challenge.dailyRequirement,
+          currentProgress: exerciseData.currentProgress || 0
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching daily exercise:', error);
+    }
+  };
+
+  // Helper function to format activity data for the chart
+  const formatActivityData = (practiceByDay) => {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
+    
+    return days.map((day, index) => {
+      const isToday = index === dayOfWeek;
+      const dateStr = getDateString(new Date(today.getTime() - ((dayOfWeek - index + 7) % 7) * 24 * 60 * 60 * 1000));
+      const minutesForDay = practiceByDay[dateStr] ? 
+        Object.values(practiceByDay[dateStr]).reduce((sum, val) => sum + val, 0) : 0;
+      
+      return {
+        day,
+        minutes: minutesForDay,
+        isToday
+      };
+    });
+  };
   
-  // Helper function to generate date string in YYYY-MM-DD format
+  // Helper function to get date string in YYYY-MM-DD format
   const getDateString = (date) => {
     return date.toISOString().split('T')[0];
   };
   
-  // Generate dummy activity data if API fails
-  const generateDummyActivityData = () => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const today = new Date();
-    const dayOfWeek = today.getDay();
+  // Helper function to get language name from code
+  const getLanguageName = (code) => {
+    const languages = {
+      'en': 'English',
+      'es': 'Spanish',
+      'fr': 'French',
+      'de': 'German',
+      'it': 'Italian',
+      'ja': 'Japanese',
+      'ko': 'Korean',
+      'zh': 'Chinese',
+      'ru': 'Russian',
+      'pt': 'Portuguese',
+      'ar': 'Arabic',
+      'hi': 'Hindi'
+    };
     
-    return days.map((day, index) => ({
-      day,
-      minutes: Math.floor(Math.random() * 45) + 5, // Random between 5-50
-      isToday: index === dayOfWeek
-    }));
+    return languages[code] || code;
   };
   
   // Handle starting today's challenge
@@ -259,12 +278,7 @@ useEffect(() => {
               )}
               
               {/* My Learning Stats */}
-              <LearningStats stats={profile?.stats || {
-                totalMinutesPracticed: 0,
-                vocabularySize: 0,
-                currentStreak: 0,
-                longestStreak: 0
-              }} />
+              <LearningStats stats={learningStats} />
               
               {/* Progress Charts */}
               <ActivityChart data={activityData} />
@@ -437,7 +451,21 @@ function TodaysChallenge({ challenge, onStart }) {
       </div>
       
       <div className="p-6">
-        <p className="text-slate-600 mb-6">{challenge.description}</p>
+        <p className="text-slate-600 mb-4">{challenge.description}</p>
+        
+        {/* Daily progress bar */}
+        <div className="mb-4">
+          <div className="flex justify-between text-sm text-slate-500 mb-1">
+            <span>Today's Progress</span>
+            <span>{challenge.currentProgress}/{challenge.dailyRequirement} minutes</span>
+          </div>
+          <div className="w-full bg-slate-200 rounded-full h-2">
+            <div 
+              className="bg-gradient-to-r from-cyan-400 to-teal-500 h-2 rounded-full" 
+              style={{ width: `${Math.min(100, (challenge.currentProgress / challenge.dailyRequirement) * 100)}%` }}
+            ></div>
+          </div>
+        </div>
         
         <div className="bg-slate-50 rounded-lg p-4 mb-6 border border-slate-100">
           <h3 className="font-medium text-slate-700 mb-2">Today's Exercise:</h3>
@@ -513,6 +541,7 @@ function LearningStats({ stats }) {
     </div>
   );
 }
+// Continuing Dashboard components...
 
 // Stat Card Component
 function StatCard({ title, value, icon, color }) {
@@ -749,6 +778,20 @@ function ActiveChallenges({ challenges, onViewChallenge, onViewAll }) {
     }).format(amount);
   };
   
+  // Calculate days left for each challenge
+  const processedChallenges = challenges.map(challenge => {
+    const endDate = new Date(challenge.endDate);
+    const now = new Date();
+    const daysLeft = Math.max(0, Math.ceil((endDate - now) / (1000 * 60 * 60 * 24)));
+    
+    return {
+      ...challenge,
+      daysLeft,
+      progress: challenge.progressPercentage,
+      languageCode: challenge.challenge.languageCode
+    };
+  });
+  
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
       <div className="border-b border-slate-100 px-6 py-4">
@@ -761,33 +804,33 @@ function ActiveChallenges({ challenges, onViewChallenge, onViewAll }) {
       </div>
       
       <div className="p-6">
-        {challenges.length > 0 ? (
+        {processedChallenges.length > 0 ? (
           <div className="space-y-4">
-            {challenges.map((challenge) => (
+            {processedChallenges.map((challenge) => (
               <div 
                 key={challenge.id} 
                 className="bg-slate-50 rounded-lg border border-slate-100 p-4 hover:shadow-md transition-shadow cursor-pointer"
-                onClick={() => onViewChallenge(challenge.id)}
+                onClick={() => onViewChallenge(challenge.challengeId)}
               >
                 <div className="flex justify-between items-start">
                   <div className="flex items-start">
                     <span className="text-2xl mr-3 mt-1">{getLanguageFlag(challenge.languageCode)}</span>
                     <div>
-                      <h3 className="font-medium text-slate-800">{challenge.title}</h3>
+                      <h3 className="font-medium text-slate-800">{challenge.challenge.title}</h3>
                       <div className="flex items-center mt-1">
                         <span className="text-xs px-2 py-0.5 bg-cyan-100 text-cyan-800 rounded-full">
                           {challenge.daysLeft} days left
                         </span>
                         <span className="mx-2 text-slate-300">•</span>
                         <span className="text-xs text-slate-500">
-                          {challenge.dailyRequirement} min/day
+                          {challenge.challenge.dailyRequirement} min/day
                         </span>
                       </div>
                     </div>
                   </div>
                   <div className="flex flex-col items-end">
                     <span className="text-sm font-medium px-2 py-1 bg-amber-100 text-amber-800 rounded-full">
-                      {formatCurrency(challenge.stakeAmount)}
+                      {formatCurrency(challenge.stakedAmount)}
                     </span>
                   </div>
                 </div>
@@ -832,15 +875,42 @@ function ActiveChallenges({ challenges, onViewChallenge, onViewAll }) {
 
 // Learning Path Component
 function LearningPath({ language, level, onSelectLesson }) {
-  // Sample learning path data - in a real implementation, this would be fetched from the API
-  const pathData = [
-    { id: 1, title: "Greetings and Introductions", completed: true },
-    { id: 2, title: "Basic Conversation", completed: true },
-    { id: 3, title: "Restaurant Phrases", current: true },
-    { id: 4, title: "Shopping Vocabulary", locked: false },
-    { id: 5, title: "Travel Expressions", locked: true },
-    { id: 6, title: "Business Japanese", locked: true }
-  ];
+  const [lessons, setLessons] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  
+  useEffect(() => {
+    // Fetch learning path data
+    async function fetchLearningPath() {
+      try {
+        // In a real implementation, this would be fetched from the API
+        // For now, we'll use sample data similar to the original
+        const sampleLessons = [
+          { id: 1, title: "Greetings and Introductions", completed: true },
+          { id: 2, title: "Basic Conversation", completed: true },
+          { id: 3, title: "Restaurant Phrases", current: true },
+          { id: 4, title: "Shopping Vocabulary", locked: false },
+          { id: 5, title: "Travel Expressions", locked: true },
+          { id: 6, title: "Business Japanese", locked: true }
+        ];
+        
+        setLessons(sampleLessons);
+      } catch (error) {
+        console.error("Error fetching learning path:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    
+    fetchLearningPath();
+  }, [language, level]);
+  
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-8">
+        <LoadingSpinner size="medium" />
+      </div>
+    );
+  }
   
   return (
     <div>
@@ -870,7 +940,7 @@ function LearningPath({ language, level, onSelectLesson }) {
         
         {/* Path items */}
         <div className="space-y-6 relative">
-          {pathData.map((item) => (
+          {lessons.map((item) => (
             <div key={item.id} className="flex">
               <div className={`h-10 w-10 rounded-full flex items-center justify-center z-10 mr-4 shadow-sm ${
                 item.completed ? 'bg-gradient-to-br from-emerald-400 to-emerald-500' : 
@@ -961,4 +1031,3 @@ function LoadingScreen() {
     </div>
   );
 }
-

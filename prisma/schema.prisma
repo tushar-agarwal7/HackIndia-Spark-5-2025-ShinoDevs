@@ -32,8 +32,12 @@ model User {
   notifications     Notification[]
   transactions      Transaction[]
   lessons            LessonCompletion[]
-  
-  
+
+  vocabulary         VocabularyPractice[]
+   grammer             GrammarPractice[]
+   speaking             SpeakingPractice[]
+  speakingSession               SpeakingSession[]
+ 
   @@index([walletAddress])
 }
 
@@ -331,6 +335,96 @@ enum TransactionType {
 
 enum TransactionStatus {
   PENDING
+  COMPLETED
+  FAILED
+}
+
+model VocabularyPractice {
+  id                String          @id @default(uuid())
+  userId            String
+  languageCode      String
+  proficiencyLevel  ProficiencyLevel
+  score             Int
+  totalQuestions    Int
+  percentageCorrect Int
+  userChallengeId   String?
+  completedAt       DateTime        @default(now())
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, languageCode])
+  @@index([completedAt])
+}
+
+// Grammar Practice module
+model GrammarPractice {
+  id                String          @id @default(uuid())
+  userId            String
+  languageCode      String
+  proficiencyLevel  ProficiencyLevel
+  score             Int
+  totalQuestions    Int
+  percentageCorrect Int
+  grammarConcepts   String?         // Comma-separated list of grammar concepts
+  userChallengeId   String?
+  completedAt       DateTime        @default(now())
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, languageCode])
+  @@index([completedAt])
+}
+
+// Speaking Practice module
+model SpeakingPractice {
+  id                String          @id @default(uuid())
+  userId            String
+  languageCode      String
+  proficiencyLevel  ProficiencyLevel
+  pronunciationScore Int
+  fluencyScore      Int
+  accuracyScore     Int
+  overallScore      Int
+  transcription     String?         @db.Text
+  prompt            String?
+  durationSeconds   Int             @default(0)
+  audioUrl          String?
+  userChallengeId   String?
+  completedAt       DateTime        @default(now())
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, languageCode])
+  @@index([completedAt])
+}
+
+// Speaking Session with Ultravox
+model SpeakingSession {
+  id                String          @id @default(uuid())
+  userId            String
+  languageCode      String
+  proficiencyLevel  ProficiencyLevel
+  ultravoxCallId    String
+  topic             String?
+  userChallengeId   String?
+  startedAt         DateTime        @default(now())
+  endedAt           DateTime?
+  durationSeconds   Int?
+  status            SpeakingSessionStatus @default(ACTIVE)
+  feedback          Json?           // Structured feedback from AI
+  
+  // Relationships
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId, languageCode])
+  @@index([ultravoxCallId])
+}
+
+enum SpeakingSessionStatus {
+  ACTIVE
   COMPLETED
   FAILED
 }
