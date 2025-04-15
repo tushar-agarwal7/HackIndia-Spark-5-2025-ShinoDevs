@@ -56,7 +56,7 @@ export default function CreateChallengeForm() {
     description: '',
     languageCode: '',
     proficiencyLevel: 'BEGINNER',
-    durationDays: 30,
+    durationDays: 1,
     dailyRequirement: 20,
     stakeAmount: 100,
     yieldPercentage: 5,
@@ -103,7 +103,7 @@ export default function CreateChallengeForm() {
     });
     
     const hasValidNumbers = 
-      parseInt(formData.durationDays) >= 7 &&
+      parseInt(formData.durationDays) >= 1 &&
       parseInt(formData.dailyRequirement) >= 5 &&
       parseFloat(formData.stakeAmount) >= 10;
     
@@ -487,7 +487,7 @@ export default function CreateChallengeForm() {
                 type="number"
                 id="durationDays"
                 name="durationDays"
-                min="7"
+                min="0"
                 max="365"
                 value={formData.durationDays}
                 onChange={handleChange}

@@ -37,7 +37,7 @@ export async function POST(request) {
     
     // Validate numerical fields
     const numericFields = [
-      { name: 'durationDays', min: 7, max: 365 },
+      { name: 'durationDays', min: 1, max: 365 },
       { name: 'dailyRequirement', min: 5, max: 120 },
       { name: 'stakeAmount', min: 10, max: 1000 },
       { name: 'yieldPercentage', min: 0, max: 20 }

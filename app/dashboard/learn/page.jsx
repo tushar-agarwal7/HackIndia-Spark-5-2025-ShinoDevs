@@ -270,56 +270,8 @@ export default function LearnPage() {
                 </Link>
               </div>
             </div>
-            
-            {/* Listening Comprehension */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
-              <div className="p-6">
-                <div className="flex items-center mb-4">
-                  <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600 mr-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15.465a5 5 0 001.414 1.414m-.707-10.607a5 5 0 00-1.414 1.414m14.242 0a9 9 0 00-1.414-1.414m-12.02 12.02a9 9 0 001.414 1.414" />
-                    </svg>
-                  </div>
-                  <h2 className="text-xl font-bold text-slate-800">Listening Comprehension</h2>
-                </div>
-                
-                <p className="text-slate-600 mb-6">
-                  Train your ear to understand native speakers. Listen to audio clips and answer comprehension questions.
-                </p>
-                
-                <Link 
-                  href={getLearningModuleUrl("/dashboard/learn/listening")}
-                  className="block w-full py-3 px-4 bg-gradient-to-r from-red-500 to-red-600 text-white text-center rounded-lg font-medium hover:from-red-600 hover:to-red-700 transition-colors"
-                >
-                  Practice Listening
-                </Link>
-              </div>
-            </div>
-            
-            {/* Daily Challenge */}
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow">
-              <div className="p-6">
-                <div className="flex items-center mb-4">
-                  <div className="w-12 h-12 bg-cyan-100 rounded-full flex items-center justify-center text-cyan-600 mr-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
-                    </svg>
-                  </div>
-                  <h2 className="text-xl font-bold text-slate-800">Daily Challenge</h2>
-                </div>
-                
-                <p className="text-slate-600 mb-6">
-                  Complete today's challenge to maintain your streak and earn rewards. Mixed exercises to test all your skills.
-                </p>
-                
-                <Link 
-                  href={getLearningModuleUrl("/dashboard/learn/daily-challenge")}
-                  className="block w-full py-3 px-4 bg-gradient-to-r from-cyan-500 to-cyan-600 text-white text-center rounded-lg font-medium hover:from-cyan-600 hover:to-cyan-700 transition-colors"
-                >
-                  Start Daily Challenge
-                </Link>
-              </div>
-            </div>
+           
+           
           </div>
           
           {/* Learning Tips */}

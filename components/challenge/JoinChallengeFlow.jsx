@@ -162,27 +162,6 @@ const handleJoinChallenge = async () => {
 };
 
 
-const debugContractState = async () => {
-  try {
-    if (!stakingContract) {
-      return "Staking contract not initialized";
-    }
-    
-    const totalStaked = await stakingContract.totalStaked();
-    const totalChallenges = await stakingContract.totalChallenges();
-    const usdcBalance = await usdcContract.balanceOf(walletAddress);
-    
-    return {
-      totalStaked: ethers.formatUnits(totalStaked, 6),
-      totalChallenges: totalChallenges.toString(),
-      usdcBalance: ethers.formatUnits(usdcBalance, 6)
-    };
-  } catch (error) {
-    return `Error debugging contract: ${error.message}`;
-  }
-};
-
-
   // Format currency
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
@@ -261,28 +240,7 @@ const debugContractState = async () => {
         >
           Cancel
         </button>
-        <button
-  onClick={async () => {
-    try {
-      const info = {
-        walletAddress: await signer.getAddress(),
-        usdcBalance: ethers.formatUnits(await usdcContract.balanceOf(await signer.getAddress()), 6),
-        totalStaked: ethers.formatUnits(await stakingContract.totalStaked(), 6),
-        totalChallenges: (await stakingContract.totalChallenges()).toString(),
-        contractAddresses: {
-          usdc: usdcContract.target,
-          staking: stakingContract.target
-        }
-      };
-      alert(JSON.stringify(info, null, 2));
-    } catch (e) {
-      alert("Error: " + e.message);
-    }
-  }}
-  className="px-4 py-2 bg-blue-200 text-blue-700 rounded-md mr-2"
->
-  Debug Contract
-</button>
+       
         <button
           onClick={handleJoinChallenge}
           className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 text-white rounded-md hover:from-cyan-600 hover:to-teal-600 cursor-pointer"
