@@ -1,105 +1,214 @@
-// app/auth/signin/page.jsx
-'use client';
-
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Image from 'next/image';
-import WalletConnectButton from '@/components/auth/WalletConnectButton';
-import UserProfileForm from '@/components/auth/UserProfileForm';
+"use client";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import Image from "next/image";
+import { ChevronRight } from "lucide-react";
+import WalletConnectButton from "@/components/auth/WalletConnectButton";
+import UserProfileForm from "@/components/auth/UserProfileForm";
+import { ChevronLeft } from "lucide-react";
 
 export default function SignIn() {
   const router = useRouter();
-  const [step, setStep] = useState('connect'); // 'connect' or 'profile'
+  const [step, setStep] = useState("connect"); // 'connect' or 'profile'
   const [walletData, setWalletData] = useState(null);
   const [error, setError] = useState(null);
-  
+
   const handleWalletSuccess = (data) => {
     setWalletData(data);
-    
     // If user is already registered and profile is complete, redirect to dashboard
     if (!data.isNewUser) {
-      router.push('/dashboard');
+      router.push("/dashboard");
       return;
     }
-    
     // Otherwise, proceed to profile setup
-    setStep('profile');
+    setStep("profile");
   };
-  
+
   const handleWalletError = (errorMessage) => {
     setError(errorMessage);
   };
-  
+
   const handleProfileSuccess = () => {
-    router.push('/dashboard');
+    router.push("/dashboard");
   };
-  
+
   const handleProfileError = (errorMessage) => {
     setError(errorMessage);
   };
-  
+
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-gray-100">
       <header className="bg-white py-4 shadow-sm">
-        <div className="container mx-auto px-4">
+        <div className="container mx-auto px-6">
           <div className="flex items-center">
             <div className="flex items-center space-x-2">
-              <Image src="/logo.svg" alt="ShinobiSpeak Logo" width={40} height={40} />
-              <span className="text-xl font-bold">ShinobiSpeak</span>
+              {/* <Image
+                src="/logo.png"
+                alt="ShinoLearn Logo"
+                width={800}
+                height={800}
+                className="rounded-lg"
+              /> */}
+              <span className="text-xl font-bold bg-gradient-to-r from-[#4d9fff] to-[#009ec2] bg-clip-text text-transparent">
+                ShinoLearn
+              </span>
             </div>
           </div>
         </div>
       </header>
-      
-      <main className="flex-1 flex items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-          {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
-              {error}
-              <button 
-                className="float-right font-bold"
-                onClick={() => setError(null)}
-              >
-                ×
-              </button>
-            </div>
-          )}
-          
-          {step === 'connect' ? (
-            <div className="text-center">
-              <h1 className="text-2xl font-bold mb-6">Welcome to ShinobiSpeak</h1>
-              <p className="mb-8 text-gray-600">
-                Connect your wallet to sign in or create an account
-              </p>
-              
-              <div className="mb-6">
-                <WalletConnectButton
-                  onSuccess={handleWalletSuccess}
-                  onError={handleWalletError}
+
+      <main className="flex-1 flex items-center justify-center p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-10 max-w-5xl w-full">
+          {/* Left Side */}
+          <div className="bg-gradient-to-br from-[#e0f7ff] to-[#f0fdfd] p-10 rounded-3xl shadow-xl relative flex flex-col justify-center">
+            <h1 className="text-2xl font-semibold text-gray-800 mb-1">
+              Welcome to
+            </h1>
+            <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#4d9fff] to-[#00d9ff] mb-4">
+              ShinoLearn
+            </h2>
+            <p className="text-gray-600 mb-8">
+              Master languages with cutting-edge AI technology
+            </p>
+
+            <div className="flex justify-center mb-8">
+              <div className="w-52 h-52 relative">
+                <Image
+                  src="/ninja.png"
+                  alt="Ninja Character"
+                  layout="fill"
+                  objectFit="contain"
+                  className="drop-shadow-2xl"
                 />
               </div>
-              
-              <p className="text-sm text-gray-500">
-                By connecting your wallet, you agree to our Terms of Service and Privacy Policy
-              </p>
             </div>
-          ) : (
-            <div>
-              <h1 className="text-2xl font-bold mb-6">Complete Your Profile</h1>
-              <p className="mb-8 text-gray-600">
-                Tell us more about yourself to get personalized language learning
-              </p>
-              
-              <UserProfileForm
-                walletAddress={walletData.walletAddress}
-                onSuccess={handleProfileSuccess}
-                onError={handleProfileError}
-              />
+
+            <div className="flex justify-between items-center mt-6">
+              {/* Language Info */}
+              <div className="flex items-center space-x-3">
+                <div className="bg-blue-100 p-2 rounded-full">
+                  <ChevronRight className="w-5 h-5 text-blue-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-700">
+                    30+ Languages
+                  </p>
+                  <p className="text-xs text-gray-500">To explore</p>
+                </div>
+              </div>
+
+              {/* AI Powered */}
+              <div className="flex items-center space-x-3">
+                <div className="bg-teal-100 p-2 rounded-full">
+                  <ChevronRight className="w-5 h-5 text-teal-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-700">
+                    AI Powered
+                  </p>
+                  <p className="text-xs text-gray-500">Learning path</p>
+                </div>
+              </div>
             </div>
-          )}
+          </div>
+
+          {/* Right Side */}
+          <div className="bg-white p-10 rounded-3xl shadow-xl w-full">
+            {error && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl flex justify-between items-center max-w-full">
+                <div className="flex-1 max-h-20 overflow-auto scrollbar-hide">
+                  <p className="text-sm">{error}</p>
+                </div>
+                <button
+                  className="cursor-pointer text-red-400 hover:text-red-600 focus:outline-none"
+                  onClick={() => setError(null)}
+                >
+                  <span className="font-semibold">×</span>
+                </button>
+              </div>
+            )}
+
+            {step === "connect" ? (
+              <div className="space-y-6 flex flex-col justify-center gap-5">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-800">Sign In</h1>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Connect your wallet to continue your journey
+                  </p>
+                </div>
+
+                <div className="bg-blue-50 p-4 rounded-2xl text-sm text-gray-600">
+                  <p className="mb-2 font-medium text-gray-700 flex items-center space-x-2">
+                    <span className="bg-blue-100 p-2 rounded-full">
+                      <ChevronRight className="w-4 h-4 text-blue-500" />
+                    </span>
+                    <span>Why connect a wallet?</span>
+                  </p>
+                  <p className="ml-10 text-xs">
+                    Your progress is securely stored on the blockchain, allowing
+                    you to own your learning journey.
+                  </p>
+                </div>
+
+                <div className="mt-4 flex justify-center">
+                  <WalletConnectButton
+                    onSuccess={handleWalletSuccess}
+                    onError={handleWalletError}
+                    className="w-full max-w-xs py-4 bg-gradient-to-r from-[#a0e9ff] to-[#4d9fff] text-white font-semibold rounded-2xl flex justify-center items-center space-x-2 shadow-md hover:shadow-lg transition-all"
+                  />
+                </div>
+
+                <p className="text-xs text-center text-gray-500 mt-6">
+                  By connecting, you agree to our{" "}
+                  <a href="#" className="text-blue-500 hover:underline">
+                    Terms of Service
+                  </a>{" "}
+                  and{" "}
+                  <a href="#" className="text-blue-500 hover:underline">
+                    Privacy Policy
+                  </a>
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-800">
+                    Complete Your Profile
+                  </h1>
+                  <p className="text-sm text-gray-500 mt-1">
+                    Personalize your learning experience
+                  </p>
+                </div>
+
+                <div className="bg-gradient-to-r from-blue-50 to-teal-50 p-4 rounded-2xl mb-6">
+                  <div className="flex items-center space-x-3">
+                    <div className="bg-blue-400 text-white rounded-full w-8 h-8 flex items-center justify-center">
+                      <ChevronRight className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-700">
+                        Wallet Connected
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {walletData?.walletAddress.slice(0, 6)}...
+                        {walletData?.walletAddress.slice(-4)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <UserProfileForm
+                  walletAddress={walletData?.walletAddress}
+                  onSuccess={handleProfileSuccess}
+                  onError={handleProfileError}
+                  className="space-y-4"
+                  buttonClassName="cursor-pointer w-full py-4 bg-gradient-to-r from-[#a0e9ff] to-[#4d9fff] text-white font-medium rounded-2xl flex items-center justify-center space-x-2 hover:opacity-90 transition-opacity"
+                />
+              </div>
+            )}
+          </div>
         </div>
       </main>
     </div>
   );
 }
-

@@ -1,17 +1,15 @@
-
-  
-  // components/ui/EmptyState.jsx
-  export default function EmptyState({
-    title = 'No data found',
-    message = 'There are no items to display at this time.',
-    icon = null,
-    action = null
-  }) {
-    return (
-      <div className="text-center p-8 border border-gray-200 rounded-lg bg-white">
+export default function EmptyState({
+  title = "No data found",
+  message = "There are no items to display at this time.",
+  icon = null,
+  action = null,
+}) {
+  return (
+    <div className="text-center p-8 border border-gray-200 rounded-lg bg-white shadow-sm hover:shadow-md transition-shadow duration-300">
+      <div className="flex justify-center">
         {icon || (
           <svg
-            className="mx-auto h-12 w-12 text-gray-400"
+            className="h-14 w-14 text-cyan-500 opacity-80"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -25,22 +23,21 @@
             />
           </svg>
         )}
-        <h3 className="mt-2 text-sm font-medium text-gray-900">{title}</h3>
-        <p className="mt-1 text-sm text-gray-500">{message}</p>
-        {action && (
-          <div className="mt-6">
-            <button
-              type="button"
-              className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              onClick={action.onClick}
-            >
-              {action.icon && (
-                <span className="mr-2">{action.icon}</span>
-              )}
-              {action.text}
-            </button>
-          </div>
-        )}
       </div>
-    );
-  }
+      <h3 className="mt-4 text-lg font-medium text-gray-800">{title}</h3>
+      <p className="mt-2 text-sm text-gray-500 max-w-md mx-auto">{message}</p>
+      {action && (
+        <div className="mt-6">
+          <button
+            type="button"
+            className="cursor-pointer inline-flex items-center rounded-lg bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 px-6 py-3 text-sm font-medium text-white shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-all duration-300"
+            onClick={action.onClick}
+          >
+            {action.icon && <span className="mr-2">{action.icon}</span>}
+            {action.text}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

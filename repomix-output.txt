@@ -170,7 +170,7 @@ export async function GET(request) {
       path: '/' 
     });
     
-    const message = `Welcome to ShinobiSpeak!\n\nPlease sign this message to verify your wallet ownership.\n\nThis request will not trigger a blockchain transaction or cost any gas fees.\n\nWallet address: ${walletAddress}\nNonce: ${nonce}`;
+    const message = `Welcome to ShinoLearn!\n\nPlease sign this message to verify your wallet ownership.\n\nThis request will not trigger a blockchain transaction or cost any gas fees.\n\nWallet address: ${walletAddress}\nNonce: ${nonce}`;
     
     return NextResponse.json({ message });
   } catch (error) {
@@ -196,7 +196,7 @@ export async function POST(request) {
     }
     
     // Recreate the message that was signed
-    const message = `Welcome to ShinobiSpeak!\n\nPlease sign this message to verify your wallet ownership.\n\nThis request will not trigger a blockchain transaction or cost any gas fees.\n\nWallet address: ${walletAddress}\nNonce: ${nonce}`;
+    const message = `Welcome to ShinoLearn!\n\nPlease sign this message to verify your wallet ownership.\n\nThis request will not trigger a blockchain transaction or cost any gas fees.\n\nWallet address: ${walletAddress}\nNonce: ${nonce}`;
     
     // Verify the signature
     const recoveredAddress = ethers.verifyMessage(message, signature);
@@ -2919,8 +2919,8 @@ export default function SignIn() {
         <div className="container mx-auto px-4">
           <div className="flex items-center">
             <div className="flex items-center space-x-2">
-              <Image src="/logo.svg" alt="ShinobiSpeak Logo" width={40} height={40} />
-              <span className="text-xl font-bold">ShinobiSpeak</span>
+              <Image src="/logo.svg" alt="ShinoLearn Logo" width={40} height={40} />
+              <span className="text-xl font-bold">ShinoLearn</span>
             </div>
           </div>
         </div>
@@ -2942,7 +2942,7 @@ export default function SignIn() {
           
           {step === 'connect' ? (
             <div className="text-center">
-              <h1 className="text-2xl font-bold mb-6">Welcome to ShinobiSpeak</h1>
+              <h1 className="text-2xl font-bold mb-6">Welcome to ShinoLearn</h1>
               <p className="mb-8 text-gray-600">
                 Connect your wallet to sign in or create an account
               </p>
@@ -5152,7 +5152,7 @@ function LoadingScreen() {
         <RobotAvatar size="large" />
       </div>
       
-      <h1 className="text-2xl font-bold mb-2 text-slate-800">Loading ShinobiSpeak...</h1>
+      <h1 className="text-2xl font-bold mb-2 text-slate-800">Loading ShinoLearn...</h1>
       <p className="text-slate-500 mb-8">Preparing your language learning adventure</p>
       
       <div className="w-64 h-2 bg-slate-200 rounded-full overflow-hidden">
@@ -7882,7 +7882,7 @@ useEffect(() => {
                       <div className="absolute bottom-[15%] w-[40%] h-[2px] bg-slate-700 rounded-full"></div>
                     </div>
                   </div>
-                  <span className="ml-2 font-bold text-xl hidden sm:block">ShinobiSpeak</span>
+                  <span className="ml-2 font-bold text-xl hidden sm:block">ShinoLearn</span>
                 </Link>
               </div>
             </div>
@@ -7993,7 +7993,7 @@ useEffect(() => {
                 </div>
               </div>
             </div>
-            <div className="ml-2 font-bold text-xl">ShinobiSpeak</div>
+            <div className="ml-2 font-bold text-xl">ShinoLearn</div>
           </div>
           <button 
             className="rounded-md p-2 text-gray-400 hover:text-gray-500 focus:outline-none"
@@ -11043,7 +11043,7 @@ export function cn(...inputs) {
 ================
 File: prisma/schema.prisma
 ================
-// This is your Prisma schema file for ShinobiSpeak
+// This is your Prisma schema file for ShinoLearn
 
 generator client {
   provider = "prisma-client-js"

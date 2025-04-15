@@ -1,79 +1,79 @@
 // components/challenge/CreateChallengeForm.jsx
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import DashboardLayout from '@/components/layout/DashboardLayout';
-import { useContract } from '@/lib/web3/hooks/useContract';
-import { LoadingSpinner } from '@/components/ui/LoadingSpinner';
-import ErrorMessage from '@/components/ui/ErrorMessage';
-import TransactionStatus from '@/components/ui/TransactionStatus';
-import { ethers } from 'ethers';
-import { nanoid } from 'nanoid';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import DashboardLayout from "@/components/layout/DashboardLayout";
+import { useContract } from "@/lib/web3/hooks/useContract";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import ErrorMessage from "@/components/ui/ErrorMessage";
+import TransactionStatus from "@/components/ui/TransactionStatus";
+import { ethers } from "ethers";
+import { nanoid } from "nanoid";
 
 // List of available languages
 const LANGUAGES = [
-  { code: 'ja', name: 'Japanese' },
-  { code: 'ko', name: 'Korean' },
-  { code: 'zh', name: 'Chinese' },
-  { code: 'en', name: 'English' },
-  { code: 'es', name: 'Spanish' },
-  { code: 'fr', name: 'French' },
-  { code: 'de', name: 'German' },
-  { code: 'it', name: 'Italian' },
-  { code: 'ru', name: 'Russian' },
-  { code: 'pt', name: 'Portuguese' },
-  { code: 'ar', name: 'Arabic' },
-  { code: 'hi', name: 'Hindi' }
+  { code: "ja", name: "Japanese" },
+  { code: "ko", name: "Korean" },
+  { code: "zh", name: "Chinese" },
+  { code: "en", name: "English" },
+  { code: "es", name: "Spanish" },
+  { code: "fr", name: "French" },
+  { code: "de", name: "German" },
+  { code: "it", name: "Italian" },
+  { code: "ru", name: "Russian" },
+  { code: "pt", name: "Portuguese" },
+  { code: "ar", name: "Arabic" },
+  { code: "hi", name: "Hindi" },
 ];
 
 // Proficiency level options
 const PROFICIENCY_LEVELS = [
-  { value: 'BEGINNER', label: 'Beginner' },
-  { value: 'ELEMENTARY', label: 'Elementary' },
-  { value: 'INTERMEDIATE', label: 'Intermediate' },
-  { value: 'ADVANCED', label: 'Advanced' },
-  { value: 'FLUENT', label: 'Fluent' }
+  { value: "BEGINNER", label: "Beginner" },
+  { value: "ELEMENTARY", label: "Elementary" },
+  { value: "INTERMEDIATE", label: "Intermediate" },
+  { value: "ADVANCED", label: "Advanced" },
+  { value: "FLUENT", label: "Fluent" },
 ];
 
 export default function CreateChallengeForm() {
   const router = useRouter();
-  const { 
-    isConnected, 
-    stakingContract, 
-    usdcContract, 
-    connectWallet, 
-    isLoading: isContractLoading, 
+  const {
+    isConnected,
+    stakingContract,
+    usdcContract,
+    connectWallet,
+    isLoading: isContractLoading,
     checkNetwork,
     switchToLocalNetwork,
     networkName,
     chainId,
-    signer
+    signer,
   } = useContract();
-  
+
   const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    languageCode: '',
-    proficiencyLevel: 'BEGINNER',
+    title: "",
+    description: "",
+    languageCode: "",
+    proficiencyLevel: "BEGINNER",
     durationDays: 1,
     dailyRequirement: 20,
     stakeAmount: 100,
     yieldPercentage: 5,
     isHardcore: false,
     maxParticipants: 10,
-    inviteCode: '',
-    autoJoin: false
+    inviteCode: "",
+    autoJoin: false,
   });
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [transaction, setTransaction] = useState(null);
-  const [step, setStep] = useState('form'); // form, submitting, success
+  const [step, setStep] = useState("form"); // form, submitting, success
   const [submissionProgress, setSubmissionProgress] = useState(null);
   const [isCorrectNetwork, setIsCorrectNetwork] = useState(false);
-  
+
   // Check if on correct network
   useEffect(() => {
     const verifyNetwork = async () => {
@@ -82,60 +82,60 @@ export default function CreateChallengeForm() {
         setIsCorrectNetwork(onCorrectNetwork);
       }
     };
-    
+
     verifyNetwork();
   }, [isConnected, checkNetwork, chainId]);
-  
+
   // Validate form is completely filled
   const isFormValid = () => {
     const requiredFields = [
-      'title',
-      'languageCode',
-      'proficiencyLevel',
-      'durationDays',
-      'dailyRequirement',
-      'stakeAmount'
+      "title",
+      "languageCode",
+      "proficiencyLevel",
+      "durationDays",
+      "dailyRequirement",
+      "stakeAmount",
     ];
-    
-    const isValid = requiredFields.every(field => {
+
+    const isValid = requiredFields.every((field) => {
       const value = formData[field];
-      return value !== undefined && value !== null && value !== '';
+      return value !== undefined && value !== null && value !== "";
     });
-    
-    const hasValidNumbers = 
+
+    const hasValidNumbers =
       parseInt(formData.durationDays) >= 1 &&
       parseInt(formData.dailyRequirement) >= 5 &&
       parseFloat(formData.stakeAmount) >= 10;
-    
+
     return isValid && hasValidNumbers;
   };
-  
+
   // Estimate daily commitment
   const getDailyCommitmentLevel = () => {
     const mins = parseInt(formData.dailyRequirement);
-    if (mins <= 10) return { level: 'Easy', color: 'text-green-500' };
-    if (mins <= 20) return { level: 'Moderate', color: 'text-amber-500' };
-    if (mins <= 40) return { level: 'Challenging', color: 'text-orange-500' };
-    return { level: 'Intense', color: 'text-red-500' };
+    if (mins <= 10) return { level: "Easy", color: "text-green-500" };
+    if (mins <= 20) return { level: "Moderate", color: "text-amber-500" };
+    if (mins <= 40) return { level: "Challenging", color: "text-orange-500" };
+    return { level: "Intense", color: "text-red-500" };
   };
-  
+
   // Calculate potential reward
   const calculatePotentialReward = () => {
     const stake = parseFloat(formData.stakeAmount);
     const yield_pct = parseFloat(formData.yieldPercentage);
-    
+
     if (isNaN(stake) || isNaN(yield_pct)) return 0;
-    
-    return stake * (1 + (yield_pct / 100));
+
+    return stake * (1 + yield_pct / 100);
   };
-  
+
   // Handle form input changes
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    
-    setFormData(prev => ({
+
+    setFormData((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === "checkbox" ? checked : value,
     }));
   };
 
@@ -143,109 +143,118 @@ export default function CreateChallengeForm() {
   const approveUSDC = async (amount) => {
     try {
       setSubmissionProgress({
-        step: 'approving',
-        message: 'Approving USDC spending...'
+        step: "approving",
+        message: "Approving USDC spending...",
       });
-      
+
       // Check if already approved
       const userAddress = await signer.getAddress();
-      const allowance = await usdcContract.allowance(userAddress, stakingContract.target);
+      const allowance = await usdcContract.allowance(
+        userAddress,
+        stakingContract.target
+      );
       const amountInWei = ethers.parseUnits(amount.toString(), 6); // USDC has 6 decimals
-      
+
       if (allowance >= amountInWei) {
         console.log("USDC already approved");
         return true;
       }
-      
+
       // Approve USDC spending
       const approveTx = await usdcContract.approve(
-        stakingContract.target, 
+        stakingContract.target,
         amountInWei
       );
-      
+
       setSubmissionProgress({
-        step: 'approvingConfirmation',
-        message: 'Waiting for approval confirmation...',
-        txHash: approveTx.hash
+        step: "approvingConfirmation",
+        message: "Waiting for approval confirmation...",
+        txHash: approveTx.hash,
       });
-      
+
       // Wait for confirmation
       const approveReceipt = await approveTx.wait();
-      
+
       if (!approveReceipt.status) {
         throw new Error("USDC approval transaction failed");
       }
-      
+
       return true;
     } catch (error) {
       console.error("Error approving USDC:", error);
       throw new Error(`Failed to approve USDC: ${error.message}`);
     }
   };
-  
+
   // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
-  
+
     if (!isFormValid()) {
-      setError('Please fill out all required fields');
+      setError("Please fill out all required fields");
       return;
     }
-    
+
     if (!isConnected) {
       try {
         await connectWallet();
       } catch (connError) {
-        setError('Please connect your wallet to create a challenge');
+        setError("Please connect your wallet to create a challenge");
         return;
       }
     }
-    
+
     if (!isCorrectNetwork) {
       try {
         const switched = await switchToLocalNetwork();
         if (!switched) {
-          setError('Please switch to Localhost network to create a challenge');
+          setError("Please switch to Localhost network to create a challenge");
           return;
         }
       } catch (networkError) {
-        setError('Failed to switch to Localhost network. Please switch manually in your wallet.');
+        setError(
+          "Failed to switch to Localhost network. Please switch manually in your wallet."
+        );
         return;
       }
     }
-    
+
     setError(null);
     setIsSubmitting(true);
-    setStep('submitting');
-    
+    setStep("submitting");
+
     try {
       let transactionHash = null;
       let contractAddress = null;
-      
+
       // Register on blockchain if connected
       if (isConnected && stakingContract) {
         try {
           // Show detailed progress to user
           setSubmissionProgress({
-            step: 'preparing',
-            message: 'Preparing contract transaction...'
+            step: "preparing",
+            message: "Preparing contract transaction...",
           });
-          
+
           // Convert values for contract
-          const stakeAmount = Math.round(parseFloat(formData.stakeAmount) * 100); // Convert to cents
-          const yieldBps = Math.round(parseFloat(formData.yieldPercentage) * 100); // Convert to basis points
-          
+          const stakeAmount = Math.round(
+            parseFloat(formData.stakeAmount) * 100
+          ); // Convert to cents
+          const yieldBps = Math.round(
+            parseFloat(formData.yieldPercentage) * 100
+          ); // Convert to basis points
+
           // Create a unique challenge ID - use timestamp + random string
           const challengeId = `${Date.now()}-${nanoid(8)}`;
-          
+
           // First approve USDC if necessary
           await approveUSDC(formData.stakeAmount);
-          
+
           setSubmissionProgress({
-            step: 'confirming',
-            message: 'Please confirm the transaction in your wallet...'
+            step: "confirming",
+            message: "Please confirm the transaction in your wallet...",
           });
-          
+
           // Call the contract function
           const tx = await stakingContract.registerChallenge(
             challengeId,
@@ -255,94 +264,105 @@ export default function CreateChallengeForm() {
             parseInt(formData.durationDays),
             { gasLimit: 500000 }
           );
-          
+
           setSubmissionProgress({
-            step: 'mining',
-            message: 'Transaction submitted! Waiting for confirmation...',
-            txHash: tx.hash
+            step: "mining",
+            message: "Transaction submitted! Waiting for confirmation...",
+            txHash: tx.hash,
           });
-          
+
           // Wait for transaction confirmation
           const receipt = await tx.wait();
-          
+
           if (receipt.status) {
             transactionHash = receipt.hash;
             contractAddress = stakingContract.target;
-            
+
             setSubmissionProgress({
-              step: 'confirmed',
-              message: 'Transaction confirmed! Creating challenge...',
-              txHash: receipt.hash
+              step: "confirmed",
+              message: "Transaction confirmed! Creating challenge...",
+              txHash: receipt.hash,
             });
           } else {
-            throw new Error('Transaction failed');
+            throw new Error("Transaction failed");
           }
         } catch (contractError) {
-          console.error('Error registering challenge on blockchain:', contractError);
-          
+          console.error(
+            "Error registering challenge on blockchain:",
+            contractError
+          );
+
           // Provide more specific error message
           if (contractError.code === 4001) {
-            throw new Error('Transaction rejected. Please approve the transaction in your wallet.');
-          } else if (contractError.message.includes('gas')) {
-            throw new Error('Transaction failed: Gas estimation error. Please try again with different parameters.');
+            throw new Error(
+              "Transaction rejected. Please approve the transaction in your wallet."
+            );
+          } else if (contractError.message.includes("gas")) {
+            throw new Error(
+              "Transaction failed: Gas estimation error. Please try again with different parameters."
+            );
           } else {
             throw new Error(`Blockchain error: ${contractError.message}`);
           }
         }
       } else {
         // Development mode: create without blockchain
-        console.warn("Creating challenge without blockchain integration - development mode");
-        transactionHash = "0x" + Array(64).fill('0').join('');
-        contractAddress = process.env.NEXT_PUBLIC_STAKING_CONTRACT_ADDRESS || "0x0000000000000000000000000000000000000000";
+        console.warn(
+          "Creating challenge without blockchain integration - development mode"
+        );
+        transactionHash = "0x" + Array(64).fill("0").join("");
+        contractAddress =
+          process.env.NEXT_PUBLIC_STAKING_CONTRACT_ADDRESS ||
+          "0x0000000000000000000000000000000000000000";
       }
-      
+
       // Create challenge in database
       const challengeData = {
         ...formData,
         transactionHash,
         contractAddress,
-        contractChain: 'localhost' // Changed from 'polygon' to 'localhost'
+        contractChain: "localhost", // Changed from 'polygon' to 'localhost'
       };
-      
-      const response = await fetch('/api/challenges/create', {
-        method: 'POST',
+
+      const response = await fetch("/api/challenges/create", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json",
         },
         body: JSON.stringify(challengeData),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create challenge');
+        throw new Error(errorData.error || "Failed to create challenge");
       }
-      
+
       const data = await response.json();
-      
+
       // Store transaction information
       if (transactionHash) {
         setTransaction({
           hash: transactionHash,
-          status: 'success'
+          status: "success",
         });
       }
-      
+
       setSuccess(true);
-      setStep('success');
-      
+      setStep("success");
+
       // Redirect after a short delay
       setTimeout(() => {
         router.push(`/dashboard/challenges/${data.id}`);
       }, 3000);
     } catch (error) {
-      console.error('Error creating challenge:', error);
-      setError(error.message || 'Failed to create challenge');
-      setStep('form');
+      console.error("Error creating challenge:", error);
+      setError(error.message || "Failed to create challenge");
+      setStep("form");
     } finally {
       setIsSubmitting(false);
     }
   };
-  
+
   // Render network warning if needed
   const renderNetworkWarning = () => {
     if (isConnected && !isCorrectNetwork) {
@@ -350,18 +370,28 @@ export default function CreateChallengeForm() {
         <div className="bg-amber-50 border border-amber-200 rounded-md p-4 text-amber-800 mb-6">
           <div className="flex">
             <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-amber-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              <svg
+                className="h-5 w-5 text-amber-400"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                  clipRule="evenodd"
+                />
               </svg>
             </div>
             <div className="ml-3">
               <h3 className="text-sm font-medium">Wrong Network Detected</h3>
               <p className="text-sm mt-1">
-                You are currently on {networkName || 'an unsupported network'}. Please switch to Localhost network to create challenges.
+                You are currently on {networkName || "an unsupported network"}.
+                Please switch to Localhost network to create challenges.
               </p>
               <button
                 onClick={switchToLocalNetwork}
-                className="mt-2 px-3 py-1 text-sm bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200"
+                className="cursor-pointer mt-2 px-3 py-1 text-sm bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200"
               >
                 Switch to Localhost
               </button>
@@ -376,25 +406,26 @@ export default function CreateChallengeForm() {
   // Render the form step
   const renderForm = () => (
     <form onSubmit={handleSubmit} className="space-y-6">
-      {error && (
-        <ErrorMessage 
-          message={error} 
-          dismiss={() => setError(null)} 
-        />
-      )}
-      
+      {error && <ErrorMessage message={error} dismiss={() => setError(null)} />}
+
       {renderNetworkWarning()}
-      
-      <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">Challenge Details</h2>
+
+      <div className="bg-white shadow-md rounded-lg overflow-hidden border border-gray-100">
+        <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-cyan-50 to-white">
+          <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+            <span className="inline-block w-1 h-6 bg-cyan-500 rounded mr-3"></span>
+            Challenge Details
+          </h2>
         </div>
-        
-        <div className="p-6 space-y-6">
+
+        <div className="p-6 space-y-6 bg-white">
           {/* Title */}
           <div>
-            <label htmlFor="title" className="block text-sm font-medium text-gray-700">
-              Challenge Title*
+            <label
+              htmlFor="title"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
+              Challenge Title<span className="text-cyan-600">*</span>
             </label>
             <input
               type="text"
@@ -402,64 +433,73 @@ export default function CreateChallengeForm() {
               name="title"
               value={formData.title}
               onChange={handleChange}
-              className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-cyan-500"
+              className="mt-1 block w-full rounded-md border border-gray-200 py-2.5 px-4 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
               placeholder="e.g., '30-Day Japanese Speaking Challenge'"
               required
             />
           </div>
-          
+
           {/* Description */}
           <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="description"
+              className="block text-sm font-medium text-gray-700 mb-1"
+            >
               Description
             </label>
             <textarea
               id="description"
               name="description"
-              rows={3}
+              rows={4}
               value={formData.description}
               onChange={handleChange}
-              className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-cyan-500"
+              className="mt-1 block w-full rounded-md border border-gray-200 py-2.5 px-4 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
               placeholder="Describe your challenge and what participants will achieve..."
             />
           </div>
-          
+
           {/* Language and Proficiency */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
-              <label htmlFor="languageCode" className="block text-sm font-medium text-gray-700">
-                Language*
+              <label
+                htmlFor="languageCode"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Language<span className="text-cyan-600">*</span>
               </label>
               <select
                 id="languageCode"
                 name="languageCode"
                 value={formData.languageCode}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-cyan-500"
+                className="mt-1 block w-full rounded-md border border-gray-200 py-2.5 px-4 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 bg-white transition-all"
                 required
               >
                 <option value="">Select a language</option>
-                {LANGUAGES.map(lang => (
+                {LANGUAGES.map((lang) => (
                   <option key={lang.code} value={lang.code}>
                     {lang.name}
                   </option>
                 ))}
               </select>
             </div>
-            
+
             <div>
-              <label htmlFor="proficiencyLevel" className="block text-sm font-medium text-gray-700">
-                Proficiency Level*
+              <label
+                htmlFor="proficiencyLevel"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Proficiency Level<span className="text-cyan-600">*</span>
               </label>
               <select
                 id="proficiencyLevel"
                 name="proficiencyLevel"
                 value={formData.proficiencyLevel}
                 onChange={handleChange}
-                className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-cyan-500"
+                className="mt-1 block w-full rounded-md border border-gray-200 py-2.5 px-4 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 bg-white transition-all"
                 required
               >
-                {PROFICIENCY_LEVELS.map(level => (
+                {PROFICIENCY_LEVELS.map((level) => (
                   <option key={level.value} value={level.value}>
                     {level.label}
                   </option>
@@ -469,66 +509,96 @@ export default function CreateChallengeForm() {
           </div>
         </div>
       </div>
-      
+
       {/* Challenge Parameters */}
       <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900">Challenge Parameters</h2>
+        <div className="px-6 py-5 border-b border-gray-100 bg-gradient-to-r from-cyan-50 to-white">
+          <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+            <span className="inline-block w-1 h-6 bg-cyan-500 rounded mr-3"></span>
+            Challenge Parameters
+          </h2>
         </div>
-        
+
         <div className="p-6 space-y-6">
           {/* Duration and Daily Requirement */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
-              <label htmlFor="durationDays" className="block text-sm font-medium text-gray-700">
-                Duration (days)*
+              <label
+                htmlFor="durationDays"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Duration (days)<span className="text-cyan-600">*</span>
               </label>
-              <input
-                type="number"
-                id="durationDays"
-                name="durationDays"
-                min="0"
-                max="365"
-                value={formData.durationDays}
-                onChange={handleChange}
-                className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-cyan-500"
-                required
-              />
-              <p className="mt-1 text-sm text-gray-500">
+              <div className="relative">
+                <input
+                  type="number"
+                  id="durationDays"
+                  name="durationDays"
+                  min="0"
+                  max="365"
+                  value={formData.durationDays}
+                  onChange={handleChange}
+                  className="mt-1 block w-full rounded-md border border-gray-200 py-2.5 pr-14 px-4 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
+                  required
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-gray-400">
+                  days
+                </div>
+              </div>
+              <p className="mt-2 text-sm text-gray-500 flex items-center">
+                <span className="inline-block w-1 h-1 bg-teal-400 rounded-full mr-2"></span>
                 We recommend 30-90 days for optimal results
               </p>
             </div>
-            
+
             <div>
-              <label htmlFor="dailyRequirement" className="block text-sm font-medium text-gray-700">
-                Daily Practice (minutes)*
+              <label
+                htmlFor="dailyRequirement"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Daily Practice (minutes)<span className="text-cyan-600">*</span>
               </label>
-              <input
-                type="number"
-                id="dailyRequirement"
-                name="dailyRequirement"
-                min="5"
-                max="120"
-                value={formData.dailyRequirement}
-                onChange={handleChange}
-                className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-cyan-500"
-                required
-              />
-              <p className="mt-1 text-sm text-gray-500">
-                Commitment level: <span className={getDailyCommitmentLevel().color}>{getDailyCommitmentLevel().level}</span>
+              <div className="relative">
+                <input
+                  type="number"
+                  id="dailyRequirement"
+                  name="dailyRequirement"
+                  min="5"
+                  max="120"
+                  value={formData.dailyRequirement}
+                  onChange={handleChange}
+                  className="mt-1 block w-full rounded-md border border-gray-200 py-2.5 pr-14 px-4 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
+                  required
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-gray-400">
+                  min
+                </div>
+              </div>
+              <p className="mt-2 text-sm text-gray-500 flex items-center">
+                Commitment level:{" "}
+                <span
+                  className={`ml-1 font-medium ${getDailyCommitmentLevel().color}`}
+                >
+                  {getDailyCommitmentLevel().level}
+                </span>
               </p>
             </div>
           </div>
-          
+
           {/* Stake Amount and Yield */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div>
-              <label htmlFor="stakeAmount" className="block text-sm font-medium text-gray-700">
-                Stake Amount (USDC)*
+              <label
+                htmlFor="stakeAmount"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Stake Amount (USDC)<span className="text-cyan-600">*</span>
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">$</span>
+                  <span className="text-gray-500 sm:text-sm font-medium">
+                    $
+                  </span>
                 </div>
                 <input
                   type="number"
@@ -538,21 +608,27 @@ export default function CreateChallengeForm() {
                   max="1000"
                   value={formData.stakeAmount}
                   onChange={handleChange}
-                  className="block w-full pl-7 pr-12 py-2 rounded-md border border-gray-300 focus:border-cyan-500 focus:outline-none focus:ring-cyan-500"
+                  className="block w-full pl-7 pr-16 py-2.5 rounded-md border border-gray-200 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
                   placeholder="0.00"
                   required
                 />
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">USDC</span>
+                  <span className="text-gray-500 sm:text-sm font-medium">
+                    USDC
+                  </span>
                 </div>
               </div>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-2 text-sm text-gray-500 flex items-center">
+                <span className="inline-block w-1 h-1 bg-amber-400 rounded-full mr-2"></span>
                 Minimum stake: $10 USDC
               </p>
             </div>
-            
+
             <div>
-              <label htmlFor="yieldPercentage" className="block text-sm font-medium text-gray-700">
+              <label
+                htmlFor="yieldPercentage"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
                 Yield Percentage
               </label>
               <div className="mt-1 relative rounded-md shadow-sm">
@@ -565,22 +641,27 @@ export default function CreateChallengeForm() {
                   step="0.5"
                   value={formData.yieldPercentage}
                   onChange={handleChange}
-                  className="block w-full pr-12 py-2 rounded-md border border-gray-300 focus:border-cyan-500 focus:outline-none focus:ring-cyan-500"
+                  className="block w-full pl-4 pr-10 py-2.5 rounded-md border border-gray-200 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
                   placeholder="5"
                 />
                 <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
-                  <span className="text-gray-500 sm:text-sm">%</span>
+                  <span className="text-gray-500 sm:text-sm font-medium">
+                    %
+                  </span>
                 </div>
               </div>
-              <p className="mt-1 text-sm text-gray-500">
-                Potential reward: ${calculatePotentialReward().toFixed(2)} USDC
+              <p className="mt-2 text-sm flex items-center">
+                <span className="text-gray-500">Potential reward:</span>
+                <span className="ml-1 font-medium text-teal-600">
+                  ${calculatePotentialReward().toFixed(2)} USDC
+                </span>
               </p>
             </div>
           </div>
-          
+
           {/* Challenge Type and Max Participants */}
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
-            <div className="flex items-start">
+            <div className="flex items-start bg-amber-50 p-3 rounded-md border border-amber-100">
               <div className="flex items-center h-5">
                 <input
                   id="isHardcore"
@@ -588,42 +669,54 @@ export default function CreateChallengeForm() {
                   type="checkbox"
                   checked={formData.isHardcore}
                   onChange={handleChange}
-                  className="focus:ring-cyan-500 h-4 w-4 text-cyan-600 border-gray-300 rounded"
+                  className="focus:ring-2 focus:ring-cyan-500 focus:ring-offset-2 h-4 w-4 text-cyan-600 border-gray-300 rounded transition-all"
                 />
               </div>
               <div className="ml-3 text-sm">
-                <label htmlFor="isHardcore" className="font-medium text-gray-700">
+                <label
+                  htmlFor="isHardcore"
+                  className="font-medium text-gray-800"
+                >
                   Hardcore Challenge
                 </label>
-                <p className="text-gray-500">
+                <p className="text-gray-600">
                   Stake is forfeited if daily requirements are not met
                 </p>
               </div>
             </div>
-            
+
             <div>
-              <label htmlFor="maxParticipants" className="block text-sm font-medium text-gray-700">
-                Max Participants (optional)
+              <label
+                htmlFor="maxParticipants"
+                className="block text-sm font-medium text-gray-700 mb-1"
+              >
+                Max Participants{" "}
+                <span className="text-gray-500">(optional)</span>
               </label>
-              <input
-                type="number"
-                id="maxParticipants"
-                name="maxParticipants"
-                min="0"
-                max="1000"
-                value={formData.maxParticipants}
-                onChange={handleChange}
-                className="mt-1 block w-full rounded-md border border-gray-300 py-2 px-3 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-cyan-500"
-              />
-              <p className="mt-1 text-sm text-gray-500">
-                Leave empty for unlimited participants
-              </p>
+              <div className="relative">
+                <input
+                  type="number"
+                  id="maxParticipants"
+                  name="maxParticipants"
+                  min="0"
+                  max="1000"
+                  value={formData.maxParticipants}
+                  onChange={handleChange}
+                  className="mt-1 block w-full rounded-md border border-gray-200 py-2.5 pl-4 pr-14 shadow-sm focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 transition-all"
+                />
+                <div className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none text-gray-500">
+                  users
+                </div>
+              </div>
             </div>
           </div>
-          
+
           {/* Invite Code */}
           <div>
-            <label htmlFor="inviteCode" className="block text-sm font-medium text-gray-700">
+            <label
+              htmlFor="inviteCode"
+              className="block text-sm font-medium text-gray-700"
+            >
               Private Invite Code (optional)
             </label>
             <input
@@ -639,9 +732,9 @@ export default function CreateChallengeForm() {
               Create a private challenge only accessible via invite code
             </p>
           </div>
-          
+
           {/* Auto-join option */}
-          <div className="flex items-start">
+          <div className="flex items-start p-4 rounded-lg shadow-sm bg-amber-50 border border-amber-100">
             <div className="flex items-center h-5">
               <input
                 id="autoJoin"
@@ -649,39 +742,53 @@ export default function CreateChallengeForm() {
                 type="checkbox"
                 checked={formData.autoJoin}
                 onChange={handleChange}
-                className="focus:ring-cyan-500 h-4 w-4 text-cyan-600 border-gray-300 rounded"
+                className="focus:ring-cyan-500 h-4 w-4 text-cyan-600 border-gray-300 rounded cursor-pointer hover:border-cyan-400 transition-colors"
               />
             </div>
             <div className="ml-3 text-sm">
-              <label htmlFor="autoJoin" className="font-medium text-gray-700">
+              <label
+                htmlFor="autoJoin"
+                className="font-medium text-gray-700 cursor-pointer hover:text-cyan-600 transition-colors"
+              >
                 Join my own challenge
               </label>
-              <p className="text-gray-500">
+              <p className="text-gray-500 mt-1">
                 Automatically join this challenge after creation
               </p>
             </div>
           </div>
         </div>
       </div>
-      
+
       {/* Wallet Connection Notice */}
       {!isConnected && (
         <div className="bg-amber-50 border border-amber-200 rounded-md p-4 text-amber-800">
           <div className="flex">
             <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-amber-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              <svg
+                className="h-5 w-5 text-amber-400"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
+                  clipRule="evenodd"
+                />
               </svg>
             </div>
             <div className="ml-3">
               <h3 className="text-sm font-medium">Wallet not connected</h3>
               <p className="text-sm mt-1">
-                Connect your wallet to enable blockchain integration for staking and rewards.
+                Connect your wallet to enable blockchain integration for staking
+                and rewards.
               </p>
               <button
                 type="button"
                 onClick={connectWallet}
-                className="mt-2 px-3 py-1 text-sm bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200"
+                className="cursor-pointer mt-2 px-3 py-1 text-sm bg-amber-100 text-amber-800 rounded-md hover:bg-amber-200"
               >
                 Connect Wallet
               </button>
@@ -689,13 +796,13 @@ export default function CreateChallengeForm() {
           </div>
         </div>
       )}
-      
+
       {/* Submit Button */}
-      <div className="flex justify-end">
+      <div className="flex justify-end mt-6 space-x-4">
         <button
           type="button"
           onClick={() => router.back()}
-          className="bg-white py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 mr-3"
+          className="cursor-pointer bg-white py-2.5 px-5 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 transition-colors duration-200 disabled:opacity-50"
           disabled={isSubmitting}
         >
           Cancel
@@ -703,54 +810,81 @@ export default function CreateChallengeForm() {
         <button
           type="submit"
           disabled={!isFormValid() || isSubmitting}
-          className="bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 border border-transparent rounded-md shadow-sm py-2 px-4 inline-flex justify-center text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 disabled:opacity-50"
+          className="cursor-pointer bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 border border-transparent rounded-md shadow-sm py-2.5 px-5 inline-flex justify-center text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-cyan-500 disabled:opacity-50 transition-all duration-200 transform hover:translate-y-px"
         >
           Create Challenge
         </button>
       </div>
     </form>
   );
-  
+
   // Render the submitting step with detailed progress
   const renderSubmitting = () => (
     <div className="text-center py-12">
       <LoadingSpinner size="large" />
-      <h2 className="mt-4 text-lg font-medium text-gray-900">Creating Your Challenge</h2>
-      
+      <h2 className="mt-4 text-lg font-medium text-gray-900">
+        Creating Your Challenge
+      </h2>
+
       {submissionProgress && (
         <div className="mt-6 max-w-md mx-auto">
           <div className="space-y-4">
             <div className="flex items-center">
-              <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${
-                submissionProgress.step === 'preparing' ? 'bg-blue-500 text-white' : 
-                submissionProgress.step === 'approving' || submissionProgress.step === 'approvingConfirmation' ? 'bg-yellow-500 text-white' : 
-                submissionProgress.step === 'confirming' ? 'bg-yellow-500 text-white' : 
-                submissionProgress.step === 'mining' ? 'bg-yellow-500 text-white' : 
-                submissionProgress.step === 'confirmed' ? 'bg-green-500 text-white' : 
-                'bg-gray-200'
-              }`}>
-                {submissionProgress.step === 'confirmed' ? (
-                  <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+              <div
+                className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${
+                  submissionProgress.step === "preparing"
+                    ? "bg-blue-500 text-white"
+                    : submissionProgress.step === "approving" ||
+                        submissionProgress.step === "approvingConfirmation"
+                      ? "bg-yellow-500 text-white"
+                      : submissionProgress.step === "confirming"
+                        ? "bg-yellow-500 text-white"
+                        : submissionProgress.step === "mining"
+                          ? "bg-yellow-500 text-white"
+                          : submissionProgress.step === "confirmed"
+                            ? "bg-green-500 text-white"
+                            : "bg-gray-200"
+                }`}
+              >
+                {submissionProgress.step === "confirmed" ? (
+                  <svg
+                    className="h-5 w-5"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 111.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
                   </svg>
                 ) : (
-                  '1'
+                  "1"
                 )}
               </div>
               <div className="ml-4">
-                <h3 className="text-sm font-medium">{
-                  submissionProgress.step === 'preparing' ? 'Preparing Transaction' : 
-                  submissionProgress.step === 'approving' ? 'Approving USDC Spending' : 
-                  submissionProgress.step === 'approvingConfirmation' ? 'Confirming USDC Approval' : 
-                  submissionProgress.step === 'confirming' ? 'Waiting for Confirmation' : 
-                  submissionProgress.step === 'mining' ? 'Processing Transaction' : 
-                  submissionProgress.step === 'confirmed' ? 'Transaction Confirmed' : 
-                  'Processing'
-                }</h3>
-                <p className="text-sm text-gray-500">{submissionProgress.message}</p>
-                
+                <h3 className="text-sm font-medium">
+                  {submissionProgress.step === "preparing"
+                    ? "Preparing Transaction"
+                    : submissionProgress.step === "approving"
+                      ? "Approving USDC Spending"
+                      : submissionProgress.step === "approvingConfirmation"
+                        ? "Confirming USDC Approval"
+                        : submissionProgress.step === "confirming"
+                          ? "Waiting for Confirmation"
+                          : submissionProgress.step === "mining"
+                            ? "Processing Transaction"
+                            : submissionProgress.step === "confirmed"
+                              ? "Transaction Confirmed"
+                              : "Processing"}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {submissionProgress.message}
+                </p>
+
                 {submissionProgress.txHash && (
-                  <a 
+                  <a
                     href={`https://mumbai.polygonscan.com/tx/${submissionProgress.txHash}`}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -761,48 +895,69 @@ export default function CreateChallengeForm() {
                 )}
               </div>
             </div>
-            
+
             <div className="flex items-center">
-              <div className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${
-                submissionProgress.step === 'confirmed' ? 'bg-blue-500 text-white' : 'bg-gray-200'
-              }`}>
+              <div
+                className={`flex-shrink-0 h-8 w-8 rounded-full flex items-center justify-center ${
+                  submissionProgress.step === "confirmed"
+                    ? "bg-blue-500 text-white"
+                    : "bg-gray-200"
+                }`}
+              >
                 2
               </div>
               <div className="ml-4">
-                <h3 className="text-sm font-medium">Creating Challenge Record</h3>
+                <h3 className="text-sm font-medium">
+                  Creating Challenge Record
+                </h3>
                 <p className="text-sm text-gray-500">
-                  {submissionProgress.step === 'confirmed' 
-                    ? 'Saving challenge details to our database...' 
-                    : 'Waiting for blockchain confirmation...'}
+                  {submissionProgress.step === "confirmed"
+                    ? "Saving challenge details to our database..."
+                    : "Waiting for blockchain confirmation..."}
                 </p>
               </div>
             </div>
           </div>
         </div>
       )}
-      
+
       <p className="mt-4 text-sm text-gray-500">
-        This process may take a minute or two to complete. Please don't close this window.
+        This process may take a minute or two to complete. Please don't close
+        this window.
       </p>
     </div>
   );
-  
+
   // Render the success step
   const renderSuccess = () => (
     <div className="text-center py-12">
       <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
-        <svg className="h-6 w-6 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+        <svg
+          className="h-6 w-6 text-green-600"
+          xmlns="http://www.w3.org/2000/svg"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+            d="M5 13l4 4L19 7"
+          />
         </svg>
       </div>
-      <h2 className="mt-4 text-lg font-medium text-gray-900">Challenge Created Successfully!</h2>
+      <h2 className="mt-4 text-lg font-medium text-gray-900">
+        Challenge Created Successfully!
+      </h2>
       <p className="mt-2 text-sm text-gray-500">
         Your challenge is now ready. Redirecting to challenge details...
       </p>
-      
+
       {transaction && (
         <div className="mt-6 max-w-md mx-auto">
-          <TransactionStatus 
+          <TransactionStatus
             txHash={transaction.hash}
             status={transaction.status}
             message="Blockchain transaction completed"
@@ -812,7 +967,7 @@ export default function CreateChallengeForm() {
       )}
     </div>
   );
-  
+
   // Render the appropriate step
   return (
     <DashboardLayout>
@@ -824,14 +979,15 @@ export default function CreateChallengeForm() {
                 Create New Challenge
               </h1>
               <p className="mt-1 text-sm text-gray-500">
-                Set up a new language learning challenge and invite others to join you.
+                Set up a new language learning challenge and invite others to
+                join you.
               </p>
             </div>
           </div>
-          
-          {step === 'form' && renderForm()}
-          {step === 'submitting' && renderSubmitting()}
-          {step === 'success' && renderSuccess()}
+
+          {step === "form" && renderForm()}
+          {step === "submitting" && renderSubmitting()}
+          {step === "success" && renderSuccess()}
         </div>
       </div>
     </DashboardLayout>
