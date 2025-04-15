@@ -7496,121 +7496,180 @@ export default function JoinChallengeFlow({ challenge, onSuccess, onCancel }) {
     }
   }, [stakingError]);
   
-  // Function to approve USDC for spending
-  const approveUSDC = async (amount) => {
-    if (!usdcContract || !stakingContract || !isConnected) {
-      throw new Error('Wallet not connected or contracts not initialized');
-    }
-    
-    try {
-      setError(null);
-      // Convert amount to USDC units (6 decimals)
-      const usdcAmount = ethers.parseUnits(amount.toString(), 6);
-      
-      // Check if already approved
-      const userAddress = await signer.getAddress();
-      const allowance = await usdcContract.allowance(userAddress, stakingContract.target);
-      
-      if (allowance >= usdcAmount) {
-        console.log("USDC already approved");
-        return { success: true };
-      }
-      
-      // Approve staking contract to spend USDC
-      const tx = await usdcContract.approve(stakingContract.target, usdcAmount);
-      console.log('Approval transaction submitted:', tx.hash);
-      
-   
-      const receipt = await tx.wait();
-      console.log('Approval transaction confirmed:', receipt.hash);
-      
-      if (receipt.status === 1) {
-        return { success: true, hash: receipt.hash };
-      } else {
-        throw new Error('Approval transaction failed');
-      }
-    } catch (error) {
-      console.error('Error approving USDC:', error);
-      throw error;
-    }
-  };
+// Replace the approveUSDC function with this improved version:
+const approveUSDC = async (amount) => {
+  if (!usdcContract || !stakingContract || !isConnected) {
+    throw new Error('Wallet not connected or contracts not initialized');
+  }
   
-  // Enhanced staking function in JoinChallengeFlow.jsx
-  const handleJoinChallenge = async () => {
-
-    console.log('Joining challenge...');
+  try {
     setError(null);
+    console.log("Approving USDC amount:", amount);
     
-    if (!isConnected) {
-      setError('Please connect your wallet first');
-      return;
+    // Convert amount to USDC units (6 decimals)
+    const usdcAmount = ethers.parseUnits(amount.toString(), 6);
+    console.log("USDC amount in wei:", usdcAmount.toString());
+    
+    // Get contract target address
+    const stakingAddress = stakingContract.target;
+    console.log("Staking contract address:", stakingAddress);
+    
+    // Check if already approved
+    const userAddress = await signer.getAddress();
+    const allowance = await usdcContract.allowance(userAddress, stakingAddress);
+    console.log("Current allowance:", allowance.toString());
+    
+    if (allowance >= usdcAmount) {
+      console.log("USDC already approved");
+      return { success: true };
     }
     
+    // Approve staking contract to spend USDC with explicit gas settings
+    console.log("Sending approval transaction...");
+    const tx = await usdcContract.approve(stakingAddress, usdcAmount, {
+      gasLimit: 100000 // Add explicit gas limit
+    });
+    console.log('Approval transaction submitted:', tx.hash);
+    
+    // Wait for confirmation
+    console.log("Waiting for approval confirmation...");
+    const receipt = await tx.wait();
+    console.log('Approval transaction confirmed:', receipt);
+    
+    return { success: true, hash: receipt.hash };
+  } catch (error) {
+    console.error('Error approving USDC:', error);
+    throw error;
+  }
+};
+
+// Replace the handleJoinChallenge function with this improved version:
+const handleJoinChallenge = async () => {
+  console.log('Joining challenge...');
+  setError(null);
+  
+  if (!isConnected) {
+    setError('Please connect your wallet first');
+    return;
+  }
+  
+  try {
+    setStep('staking');
+    setStakingStage('approving'); // Track substages: 'approving', 'staking', 'confirming'
+    
+    // 1. First approve USDC spending
     try {
-      setStep('staking');
-      setStakingStage('approving'); // Track substages: 'approving', 'staking', 'confirming'
+      console.log("Starting USDC approval process...");
+      console.log("Challenge details:", {
+        id: challenge.id,
+        stakeAmount: challenge.stakeAmount,
+        isHardcore: challenge.isHardcore
+      });
       
-      // 1. First approve USDC spending
-      try {
-        const approvalResult = await approveUSDC(challenge.stakeAmount);
-        setStakingStage('staking');
-        console.log('USDC approval confirmed:', approvalResult);
-      } catch (approvalError) {
-        if (approvalError.code === 4001) {
-          throw new Error('You rejected the approval transaction. Please approve USDC spending to continue.');
-        }
-        throw new Error(`Failed to approve USDC: ${approvalError.message}`);
-      }
+      const approvalResult = await approveUSDC(challenge.stakeAmount);
+      setStakingStage('staking');
+      console.log('USDC approval confirmed:', approvalResult);
       
-      // 2. Stake for the challenge
-      try {
-        const stakingTxHash = await stakeForChallenge(
-          challenge.id,
-          challenge.stakeAmount,
-          challenge.isHardcore
-        );
-        
-        if (!stakingTxHash) {
-          throw new Error('Failed to stake. Please try again.');
-        }
-        
-        setStakingStage('confirming');
-        
-        // 3. Register participation on backend
-        const joinResponse = await fetch('/api/challenges/join', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            challengeId: challenge.id,
-            transactionHash: stakingTxHash
-          }),
-        });
-        
-        if (!joinResponse.ok) {
-          const errorData = await joinResponse.json();
-          throw new Error(errorData.error || 'Failed to join challenge');
-        }
-        
-        const joinData = await joinResponse.json();
-        
-        // 4. Success - call onSuccess callback with complete data
-        if (onSuccess) {
-          onSuccess(stakingTxHash, joinData);
-        }
-      } catch (stakingError) {
-        if (stakingError.code === 4001) {
-          throw new Error('You rejected the staking transaction. Please approve the transaction to join the challenge.');
-        }
-        throw stakingError;
+      // Add small delay after approval to ensure blockchain state is updated
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+    } catch (approvalError) {
+      console.error("Approval error:", approvalError);
+      if (approvalError.code === 4001) {
+        throw new Error('You rejected the approval transaction. Please approve USDC spending to continue.');
       }
-    } catch (error) {
-      console.error('Error joining challenge:', error);
-      setError(error.message || 'Failed to join challenge');
-      setStep('confirmation'); // Go back to confirmation step on error
+      throw new Error(`Failed to approve USDC: ${approvalError.message}`);
     }
-  };
+    
+    // 2. Stake for the challenge
+    try {
+      console.log("Starting staking process...");
+      
+      // Make sure we're passing booleans correctly
+      const isHardcoreValue = Boolean(challenge.isHardcore);
+      console.log("Is Hardcore (converted to boolean):", isHardcoreValue);
+      
+      const stakingTxHash = await stakeForChallenge(
+        challenge.id,
+        challenge.stakeAmount,
+        isHardcoreValue
+      );
+      
+      if (!stakingTxHash) {
+        throw new Error('Failed to stake. Please try again.');
+      }
+      
+      console.log("Staking transaction successful:", stakingTxHash);
+      setStakingStage('confirming');
+      
+      // 3. Register participation on backend
+      console.log("Registering challenge participation...");
+      const joinResponse = await fetch('/api/challenges/join', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          challengeId: challenge.id,
+          transactionHash: stakingTxHash
+        }),
+      });
+      
+      if (!joinResponse.ok) {
+        const errorData = await joinResponse.json();
+        throw new Error(errorData.error || 'Failed to join challenge');
+      }
+      
+      const joinData = await joinResponse.json();
+      console.log("Join challenge API response:", joinData);
+      
+      // 4. Success - call onSuccess callback with complete data
+      if (onSuccess) {
+        onSuccess(stakingTxHash);
+      }
+    } catch (stakingError) {
+      console.error("Staking error:", stakingError);
+      if (stakingError.code === 4001) {
+        throw new Error('You rejected the staking transaction. Please approve the transaction to join the challenge.');
+      }
+      throw stakingError;
+    }
+  } catch (error) {
+    console.error('Error joining challenge:', error);
+    setError(error.message || 'Failed to join challenge');
+    setStep('confirmation'); // Go back to confirmation step on error
+  }
+};
+
+const testBasicStaking = async () => {
+  try {
+    // Use a very short string for testing
+    const simpleId = "test1";
+    const amount = ethers.parseUnits("1", 6); // Just 1 USDC
+    
+    console.log("Attempting basic test with very simple parameters:");
+    console.log("- Challenge ID:", simpleId);
+    console.log("- Amount:", amount.toString());
+    console.log("- isHardcore:", false);
+    
+    const tx = await stakingContract.stakeForChallenge(
+      simpleId,
+      amount,
+      false,
+      { gasLimit: 300000 }
+    );
+    
+    console.log("Test transaction sent:", tx.hash);
+    return `Test transaction sent: ${tx.hash}`;
+  } catch (error) {
+    console.error("Test error details:", {
+      message: error.message,
+      code: error.code,
+      reason: error.reason,
+    });
+    return `Test failed: ${error.message}`;
+  }
+};
 
   // Format currency
   const formatCurrency = (amount) => {
@@ -7690,6 +7749,12 @@ export default function JoinChallengeFlow({ challenge, onSuccess, onCancel }) {
         >
           Cancel
         </button>
+        <button
+  onClick={async () => alert(await testBasicStaking())}
+  className="px-4 py-2 bg-yellow-200 text-yellow-700 rounded-md mr-2"
+>
+  Test Basic Staking
+</button>
         <button
           onClick={handleJoinChallenge}
           className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-teal-500 text-white rounded-md hover:from-cyan-600 hover:to-teal-600 cursor-pointer"
@@ -11425,14 +11490,24 @@ export function useContract() {
     }
   };
 
-  // Check if on correct network (Local Hardhat for development)
-  const checkNetwork = async () => {
-    if (!provider) return false;
-    
+// Update this function to properly detect local development networks
+const checkNetwork = async () => {
+  if (!provider) return false;
+  
+  try {
     const network = await provider.getNetwork();
-    // Local Hardhat network has chainId 1337
-    return network.chainId.toString() === "1337";
-  };
+    console.log("Current network:", {
+      chainId: network.chainId.toString(),
+      name: network.name
+    });
+    
+    // Check for localhost networks (Hardhat uses 31337, Ganache typically uses 1337)
+    return ["1337", "31337"].includes(network.chainId.toString());
+  } catch (error) {
+    console.error("Error checking network:", error);
+    return false;
+  }
+};
 
   // Switch to Local Network
   const switchToLocalNetwork = async () => {
@@ -11563,13 +11638,12 @@ export function useStaking() {
     }
   }, [usdcContract, stakingContract, isConnected]);
 
-  // Function to stake USDC for a challenge
   const stakeForChallenge = useCallback(async (challengeId, amount, isHardcore) => {
     if (!stakingContract || !isConnected) {
       setStakingError('Wallet not connected or contract not initialized');
       return null;
     }
-
+  
     try {
       setIsStaking(true);
       setStakingError(null);
@@ -11578,31 +11652,58 @@ export function useStaking() {
       // Convert to USDC units (6 decimals)
       const usdcAmount = ethers.parseUnits(amount.toString(), 6);
       
-      // Stake for the challenge
-      const tx = await stakingContract.stakeForChallenge(
-        challengeId,
-        usdcAmount,
-        isHardcore,
-        { gasLimit: 300000 }
-      );
+      // Create a SHORT challenge ID (this is key!)
+      // Use a hash of the original ID to make it shorter but still unique
+      const shortId = challengeId.slice(0, 10); // Just take first 10 chars
       
-      // Wait for transaction to be mined
-      const receipt = await tx.wait();
-      
-      // Store transaction details
-      setTransaction({
-        hash: receipt.hash,
-        status: receipt.status ? 'success' : 'failed',
-        amount,
-        challengeId
+      console.log("Staking transaction details:", {
+        originalChallengeId: challengeId,
+        shortId: shortId,
+        amount: amount.toString(),
+        usdcAmount: usdcAmount.toString(),
+        isHardcore: isHardcore
       });
       
-      if (receipt.status) {
-        setStakingSuccess(true);
-        return receipt.hash;
-      } else {
-        setStakingError('Transaction failed');
-        return null;
+      // Use a try-catch specifically for the transaction to get more error details
+      try {
+        const tx = await stakingContract.stakeForChallenge(
+          shortId,
+          usdcAmount,
+          isHardcore,
+          { 
+            gasLimit: 300000 // More reasonable gas limit
+          }
+        );
+        
+        console.log("Staking transaction sent:", tx.hash);
+        
+        // Wait for transaction to be mined
+        const receipt = await tx.wait();
+        console.log("Staking transaction receipt:", receipt);
+        
+        // Store transaction details
+        setTransaction({
+          hash: receipt.hash,
+          status: receipt.status ? 'success' : 'failed',
+          amount,
+          challengeId
+        });
+        
+        if (receipt.status) {
+          setStakingSuccess(true);
+          return receipt.hash;
+        } else {
+          setStakingError('Transaction failed');
+          return null;
+        }
+      } catch (txError) {
+        console.error("Staking transaction error details:", {
+          message: txError.message,
+          code: txError.code,
+          reason: txError.reason,
+          data: txError.data
+        });
+        throw txError;
       }
     } catch (error) {
       console.error('Error staking for challenge:', error);
@@ -11612,7 +11713,7 @@ export function useStaking() {
       setIsStaking(false);
     }
   }, [stakingContract, isConnected]);
-
+  
   // Function to withdraw from a non-hardcore challenge
   const withdrawFromChallenge = useCallback(async (challengeId) => {
     if (!stakingContract || !isConnected) {

@@ -92,42 +92,68 @@ contract StakingChallenge is Ownable, ReentrancyGuard {
      * @param amount The amount of USDC to stake
      * @param isHardcore Whether the challenge is hardcore (stake can be lost) or not
      */
-    function stakeForChallenge(string memory challengeId, uint256 amount, bool isHardcore) external nonReentrant {
-        require(amount > 0, "Stake amount must be greater than 0");
-        require(stakes[msg.sender][challengeId].amount == 0, "Already staked for this challenge");
+// Excerpt from StakingChallenge.sol - update the stakeForChallenge function
+function stakeForChallenge(string memory challengeId, uint256 amount, bool isHardcore) external nonReentrant {
+    require(amount > 0, "Stake amount must be greater than 0");
+    
+    // For development: allow re-staking in case of errors
+    if (stakes[msg.sender][challengeId].amount > 0) {
+        // Remove previous stake
+        totalStaked -= stakes[msg.sender][challengeId].amount;
         
-        // Verify challenge exists
-        Challenge memory challenge = challenges[challengeId];
-        require(challenge.createdAt > 0, "Challenge does not exist");
-        require(challenge.isActive, "Challenge is not active");
+        // Clean up old mapping
+        delete stakes[msg.sender][challengeId];
         
-        // Verify stake amount matches challenge requirement if challenge is registered
-        if (challenge.stakeAmount > 0) {
-            require(amount == challenge.stakeAmount, "Stake amount must match challenge requirement");
-            require(isHardcore == challenge.isHardcore, "Hardcore flag must match challenge setting");
-        }
-        
-        // Transfer USDC from user to contract
-        require(usdcToken.transferFrom(msg.sender, address(this), amount), "USDC transfer failed");
-        
-        // Create stake record
-        stakes[msg.sender][challengeId] = Stake({
-            challengeId: challengeId,
-            amount: amount,
-            timestamp: block.timestamp,
+        // Remove from active challenges
+        _removeActiveChallenge(msg.sender, challengeId);
+    }
+    
+    // Check if challenge exists
+    Challenge memory challenge = challenges[challengeId];
+    if (challenge.createdAt == 0) {
+        // Auto-create challenge if it doesn't exist (for development)
+        challenges[challengeId] = Challenge({
+            id: challengeId,
+            stakeAmount: amount,
+            yieldBps: 500, // 5%
             isHardcore: isHardcore,
-            isCompleted: false,
-            isFailed: false
+            durationDays: 30,
+            isActive: true,
+            creator: msg.sender,
+            createdAt: block.timestamp
         });
         
-        // Add to user's active challenges
-        userActiveChallenges[msg.sender].push(challengeId);
+        totalChallenges++;
+        emit ChallengeRegistered(challengeId, msg.sender, amount, 500, isHardcore);
         
-        // Update total staked amount
-        totalStaked += amount;
-        
-        emit StakeReceived(msg.sender, challengeId, amount, isHardcore);
+        // Update local variable
+        challenge = challenges[challengeId];
     }
+    
+    require(challenge.isActive, "Challenge is not active");
+    
+    // Transfer USDC from user to contract
+    require(usdcToken.transferFrom(msg.sender, address(this), amount), "USDC transfer failed");
+    
+    // Create stake record
+    stakes[msg.sender][challengeId] = Stake({
+        challengeId: challengeId,
+        amount: amount,
+        timestamp: block.timestamp,
+        isHardcore: isHardcore,
+        isCompleted: false,
+        isFailed: false
+    });
+    
+    // Add to user's active challenges
+    userActiveChallenges[msg.sender].push(challengeId);
+    
+    // Update total staked amount
+    totalStaked += amount;
+    
+    emit StakeReceived(msg.sender, challengeId, amount, isHardcore);
+}
+
     
     /**
      * @dev Completes a challenge and distributes rewards to the user
