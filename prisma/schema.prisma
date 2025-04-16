@@ -266,6 +266,7 @@ enum AchievementType {
   VOCABULARY_SIZE
   CHALLENGE_COMPLETED
   PRACTICE_HOURS
+  GRAMMAR_PRACTICE
 }
 
 model UserAchievement {
@@ -305,6 +306,7 @@ enum NotificationType {
   STAKE_CONFIRMED
   REWARD_DISTRIBUTED
   CHALLENGE_CREATED
+  CHALLENGE_WITHDRAWN
 }
 
 // Financial transactions

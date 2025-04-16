@@ -19,6 +19,10 @@ export default function ChallengePage({ params }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showJoinFlow, setShowJoinFlow] = useState(false);
+  const [isCompletingChallenge, setIsCompletingChallenge] = useState(false);
+  const [completionError, setCompletionError] = useState(null);
+  const [completionStatus, setCompletionStatus] = useState(null);
+  const [isExitingChallenge, setIsExitingChallenge] = useState(false);
 
   const { isConnected, signer } = useContract();
   const { getStakeDetails } = useStaking();
@@ -198,6 +202,33 @@ export default function ChallengePage({ params }) {
               </div>
             )}
 
+          {/* Exit Challenge option for non-hardcore challenges */}
+          {userParticipation.status === "ACTIVE" && !challenge.isHardcore && (
+            <div className="mt-4">
+              <button
+                onClick={handleExitChallenge}
+                disabled={isExitingChallenge}
+                className="cursor-pointer w-full border border-red-300 text-red-600 px-6 py-3 rounded-lg font-medium shadow-sm transition-all hover:bg-red-50 disabled:opacity-50 flex items-center justify-center"
+              >
+                {isExitingChallenge ? (
+                  <>
+                    <LoadingSpinner
+                      size="small"
+                      color="red"
+                      className="mr-2"
+                    />
+                    Processing...
+                  </>
+                ) : (
+                  "Exit Challenge"
+                )}
+              </button>
+              <p className="text-xs text-gray-500 mt-2 text-center">
+                You can exit this challenge, but you'll lose your progress.
+              </p>
+            </div>
+          )}
+
           {/* Show completion status if available */}
           {completionStatus && (
             <div
@@ -242,6 +273,16 @@ export default function ChallengePage({ params }) {
               <p className="font-medium">Challenge Failed</p>
               <p className="text-sm mt-1">
                 Unfortunately, this challenge was not completed successfully.
+              </p>
+            </div>
+          )}
+
+          {/* If challenge is withdrawn */}
+          {status === "WITHDRAWN" && (
+            <div className="bg-amber-50 text-amber-700 border border-amber-200 rounded-md p-3">
+              <p className="font-medium">Challenge Withdrawn</p>
+              <p className="text-sm mt-1">
+                You've withdrawn from this challenge.
               </p>
             </div>
           )}
@@ -296,6 +337,55 @@ export default function ChallengePage({ params }) {
       });
     } finally {
       setIsCompletingChallenge(false);
+    }
+  };
+  const handleExitChallenge = async () => {
+    if (!userParticipation || userParticipation.status !== "ACTIVE") {
+      return;
+    }
+
+    // Confirm with user
+    if (!confirm("Are you sure you want to exit this challenge? You'll lose your progress.")) {
+      return;
+    }
+
+    try {
+      setIsExitingChallenge(true);
+      setCompletionError(null);
+
+      const res = await fetch(`/api/challenges/${challenge.id}/exit`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        }
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to exit challenge");
+      }
+
+      const data = await res.json();
+
+      // Show success message
+      setCompletionStatus({
+        success: true,
+        message: `You've successfully exited the challenge with ${data.progress}% progress.`,
+      });
+
+      // Refresh challenge data after a short delay
+      setTimeout(() => {
+        router.refresh();
+      }, 3000);
+    } catch (error) {
+      console.error("Error exiting challenge:", error);
+      setCompletionError(error.message || "Failed to exit challenge");
+      setCompletionStatus({
+        success: false,
+        message: error.message || "Failed to exit challenge",
+      });
+    } finally {
+      setIsExitingChallenge(false);
     }
   };
 
@@ -507,6 +597,9 @@ export default function ChallengePage({ params }) {
               )}
             </div>
           </div>
+
+          {/* User Progress Section */}
+          {renderProgressSection()}
 
           {/* Challenge details */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">

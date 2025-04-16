@@ -1,39 +1,65 @@
 // app/api/learn/grammar/generate/route.js
 import { NextResponse } from 'next/server';
 import { verifyAuth } from '@/lib/auth/verify';
-import OpenAI from 'openai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Function to generate grammar questions using OpenAI
+// Function to generate grammar questions using DeepSeek via OpenRouter
 async function generateGrammarQuestions(languageCode, proficiencyLevel, count = 10) {
   try {
     // Set up the prompt based on language and proficiency level
     const prompt = createPromptForLanguage(languageCode, proficiencyLevel, count);
     
-    // Make API request to OpenAI
-    const response = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        {
-          role: "system",
-          content: "You are a language learning assistant that creates grammar exercises. Your responses should be in valid JSON format."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.7,
-      max_tokens: 2048
+    // OpenRouter API key from environment variables
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    
+    // Make API request to DeepSeek via OpenRouter
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        "HTTP-Referer": "http://localhost:3000" // Required by OpenRouter
+      },
+      body: JSON.stringify({
+        model: "deepseek/deepseek-r1:free",
+        messages: [
+          {
+            role: "system",
+            content: "You are a language learning assistant that creates grammar exercises. Your responses should be in valid JSON format."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.7,
+        max_tokens: 2048
+      }),
     });
 
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('DeepSeek API error:', errorData);
+      throw new Error(`DeepSeek API error: ${response.status}`);
+    }
+    
     // Extract and parse the generated content
-    const jsonContent = response.choices[0].message.content;
-    const questionsData = JSON.parse(jsonContent);
+    const responseData = await response.json();
+    const jsonContent = responseData.choices[0].message.content;
+    
+    let questionsData;
+    try {
+      questionsData = JSON.parse(jsonContent);
+    } catch (parseError) {
+      console.error('Error parsing JSON from DeepSeek:', parseError);
+      // Attempt to extract JSON if the model wrapped it with additional text
+      const jsonMatch = jsonContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        questionsData = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('Failed to parse response as JSON');
+      }
+    }
     
     // Validate and format the questions
     if (questionsData.questions && Array.isArray(questionsData.questions)) {

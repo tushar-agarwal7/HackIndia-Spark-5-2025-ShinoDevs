@@ -114,19 +114,7 @@ export default function SignIn() {
 
           {/* Right Side */}
           <div className="bg-white p-10 rounded-3xl shadow-xl w-full">
-            {error && (
-              <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl flex justify-between items-center max-w-full">
-                <div className="flex-1 max-h-20 overflow-auto scrollbar-hide">
-                  <p className="text-sm">{error}</p>
-                </div>
-                <button
-                  className="cursor-pointer text-red-400 hover:text-red-600 focus:outline-none"
-                  onClick={() => setError(null)}
-                >
-                  <span className="font-semibold">×</span>
-                </button>
-              </div>
-            )}
+           
 
             {step === "connect" ? (
               <div className="space-y-6 flex flex-col justify-center gap-5">

@@ -85,14 +85,14 @@ export default function ChallengeCard({ challenge, isActive }) {
         {isActive ? (
           <Link 
             href={`/dashboard/challenges/${challenge.id}`}
-            className="block w-full py-2 text-center bg-primary text-white rounded-md hover:bg-primary-dark transition-colors"
+            className="block w-full py-2 text-center   text-white  bg-gradient-to-r from-cyan-500 to-teal-500 hite rounded-md"
           >
             Continue Challenge
           </Link>
         ) : (
           <Link 
             href={`/dashboard/challenges/${challenge.id}`}
-            className="block w-full py-2 text-center bg-primary text-white rounded-md hover:bg-primary-dark transition-colors"
+            className="block w-full py-2 text-center   bg-gradient-to-r from-cyan-500 to-teal-500   text-white rounded-md "
           >
             View Challenge
           </Link>

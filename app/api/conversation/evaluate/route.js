@@ -2,12 +2,8 @@
 import { NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
 import { verifyAuth } from '@/lib/auth/verify';
-import OpenAI from 'openai';
 
 const prisma = new PrismaClient();
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export async function POST(request) {
   const auth = await verifyAuth();
@@ -99,19 +95,50 @@ export async function POST(request) {
     Conversation transcript:
     ${transcript}`;
     
-    // Generate evaluation using OpenAI
-    const evaluationResponse = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: [
-        { role: "system", content: evaluationPrompt }
-      ],
-      temperature: 0.3,
-      response_format: { type: "json_object" },
+    // OpenRouter API key from environment variables
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    
+    // Generate evaluation using DeepSeek via OpenRouter
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        "HTTP-Referer": "http://localhost:3000" // Required by OpenRouter
+      },
+      body: JSON.stringify({
+        model: "deepseek/deepseek-r1:free",
+        messages: [
+          { role: "system", content: evaluationPrompt }
+        ],
+        temperature: 0.3,
+        response_format: { type: "json_object" },
+      }),
     });
     
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('DeepSeek API error:', errorData);
+      throw new Error(`DeepSeek API error: ${response.status}`);
+    }
+    
     // Parse evaluation
-    const evaluationContent = evaluationResponse.choices[0].message.content;
-    const evaluation = JSON.parse(evaluationContent);
+    const evaluationResponseData = await response.json();
+    const evaluationContent = evaluationResponseData.choices[0].message.content;
+    let evaluation;
+    
+    try {
+      evaluation = JSON.parse(evaluationContent);
+    } catch (parseError) {
+      console.error('Error parsing evaluation JSON:', parseError);
+      // Attempt to extract JSON if the model wrapped it with additional text
+      const jsonMatch = evaluationContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        evaluation = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('Failed to parse evaluation response as JSON');
+      }
+    }
     
     // Store evaluation in database
     const conversationEvaluation = await prisma.conversationEvaluation.create({

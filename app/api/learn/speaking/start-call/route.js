@@ -25,6 +25,8 @@ export async function POST(request) {
       topic,
       userChallengeId 
     } = body;
+
+    console.log('Request body:', body);
     
     // Validate required fields
     if (!languageCode || !systemPrompt) {

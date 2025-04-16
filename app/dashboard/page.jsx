@@ -394,7 +394,7 @@ export default function Dashboard() {
                   language={profile.learningLanguages[0].languageCode}
                   level={profile.learningLanguages[0].proficiencyLevel}
                   onSelectLesson={(lessonId) =>
-                    router.push(`/dashboard/learn/${lessonId}`)
+                    router.push(`/dashboard/learn`)
                   }
                 />
               ) : (
@@ -751,7 +751,7 @@ function LearningStats({ stats }) {
 
           <StatCard
             title="Longest Streak"
-            value={`${stats.longestStreak || 0} days`}
+            value={`${stats.currentStreak || 0} days`}
             icon={
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -821,7 +821,7 @@ function ActivityChart({ data }) {
   const maxMinutes = Math.max(...data.map((d) => d.minutes), 10); // Min of 10 for scale
 
   return (
-    <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden hover:shadow-lg transition-all duration-300">
+    <div className=" rounded-xl shadow-md border border-slate-200 overflow-hidden hover:shadow-lg transition-all duration-300">
       <div className="border-b border-slate-200 px-6 py-4 bg-gradient-to-r from-slate-50 to-white">
         <h2 className="text-xl font-bold text-slate-800 flex items-center">
           <svg
@@ -1213,12 +1213,11 @@ function LearningPath({ language, level, onSelectLesson }) {
         // In a real implementation, this would be fetched from the API
         // For now, we'll use sample data similar to the original
         const sampleLessons = [
-          { id: 1, title: "Greetings and Introductions", completed: true },
+          { id: 1, title: "Grammers", completed: true },
           { id: 2, title: "Basic Conversation", completed: true },
-          { id: 3, title: "Restaurant Phrases", current: true },
-          { id: 4, title: "Shopping Vocabulary", locked: false },
-          { id: 5, title: "Travel Expressions", locked: true },
-          { id: 6, title: "Business Japanese", locked: true },
+          { id: 3, title: "Vocabularies", current: true },
+          { id: 4, title: "Practive with AI Voice Tutor", locked: false },
+        
         ];
 
         setLessons(sampleLessons);
