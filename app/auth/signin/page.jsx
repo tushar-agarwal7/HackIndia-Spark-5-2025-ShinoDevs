@@ -72,13 +72,13 @@ export default function SignIn() {
             </p>
 
             <div className="flex justify-center mb-8">
-              <div className="w-52 h-52 relative">
+              <div className="w-82 h-82 relative">
                 <Image
-                  src="/ninja.png"
-                  alt="Ninja Character"
-                  layout="fill"
-                  objectFit="contain"
+                  src="/logo.png"
+                  alt="ShinoLearn Logo"
                   className="drop-shadow-2xl"
+                  width={400}
+                  height={400}
                 />
               </div>
             </div>
@@ -113,9 +113,7 @@ export default function SignIn() {
           </div>
 
           {/* Right Side */}
-          <div className="bg-white p-10 rounded-3xl shadow-xl w-full">
-           
-
+          <div className="bg-white p-10 rounded-3xl shadow-xl w-full flex flex-col justify-center">
             {step === "connect" ? (
               <div className="space-y-6 flex flex-col justify-center gap-5">
                 <div>

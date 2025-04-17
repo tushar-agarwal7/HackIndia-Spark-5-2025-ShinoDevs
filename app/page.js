@@ -46,7 +46,14 @@ export default function LandingPage() {
         <div className="container mx-auto px-6 flex justify-between items-center">
           <div className="flex items-center">
             <div className="mr-3">
-              <RobotLogo />
+              {/* <RobotLogo /> */}
+              <Image
+                src="/logo.png"
+                alt="ShinoLearn Logo"
+                className="drop-shadow-2xl pr-2"
+                width={70}
+                height={70}
+              />
             </div>
             <span className="text-xl font-bold bg-gradient-to-r from-cyan-600 to-teal-600 text-transparent bg-clip-text">
               ShinoLearn
@@ -206,12 +213,20 @@ export default function LandingPage() {
       {/* Features Section */}
       <section id="features" className="py-20 bg-white">
         <div className="container mx-auto px-6">
-          <div className="text-center max-w-3xl mx-auto mb-16">
-            <div className="inline-block px-3 py-1 bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 text-sm font-medium rounded-full mb-4">
+          <div className="text-center max-w-3xl mx-auto mb-16 flex flex-col items-center">
+            {/* <div className="inline-block px-3 py-1 bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 text-sm font-medium rounded-full mb-4">
               Key Features
-            </div>
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Why ShinoLearn is Revolutionary
+            </div> */}
+            <h2 className="text-3xl md:text-4xl font-bold mb-4 flex items-center">
+              Why
+              <Image
+                src="/logo.png"
+                alt="ShinoLearn Logo"
+                className="drop-shadow-2xl px-3 inline-block"
+                width={100}
+                height={100}
+              />
+              is Revolutionary
             </h2>
             <p className="text-slate-600">
               Our platform combines cutting-edge AI with blockchain incentives
@@ -748,7 +763,7 @@ function HeroAnimation() {
   return (
     <div className="relative w-full h-full">
       {/* Main image */}
-      <div className="absolute w-[80%] h-[80%] top-[10%] left-[10%] rounded-2xl bg-white shadow-xl overflow-hidden border border-slate-200">
+      <div className="absolute w-[80%] h-[90%] top-[10%] left-[10%] rounded-2xl bg-white shadow-xl overflow-hidden border border-slate-200">
         <div className="p-6">
           {/* Robot Avatar and chat interface mockup */}
           <div className="flex">
@@ -851,7 +866,7 @@ function HeroAnimation() {
         </div>
       </div>
 
-      <div className="absolute bottom-[10%] right-[10%] bg-white rounded-lg shadow-lg p-4 border border-slate-100 animate-float delay-150">
+      <div className="absolute bottom-[10%] right-[5%] bg-white rounded-lg shadow-lg p-4 border border-slate-100 animate-float delay-150">
         <div className="flex items-center">
           <div className="mr-3 p-2 bg-teal-100 rounded-full">
             <svg

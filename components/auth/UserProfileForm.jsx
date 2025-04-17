@@ -13,6 +13,7 @@ const LANGUAGES = [
   { code: "ja", name: "Japanese" },
   { code: "ko", name: "Korean" },
   { code: "zh", name: "Chinese" },
+  { code: "ne", name: "Nepali" },
   { code: "ru", name: "Russian" },
   { code: "pt", name: "Portuguese" },
   { code: "ar", name: "Arabic" },

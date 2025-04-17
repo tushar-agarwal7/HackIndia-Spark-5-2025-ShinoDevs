@@ -145,7 +145,7 @@ export default function DashboardLayout({ children }) {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top navigation */}
-      <nav className="shadow-md border-b border-gray-200 fixed top-0 left-0 right-0 z-30 bg-white/95">
+      <nav className="shadow-sm border-b border-gray-200 fixed top-0 left-0 right-0 z-30 bg-white/95 py-2">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
             <div className="flex items-center">
@@ -175,28 +175,13 @@ export default function DashboardLayout({ children }) {
 
               <div className="flex-shrink-0 flex items-center ml-0 md:ml-0">
                 <Link href="/dashboard" className="flex items-center">
-                  <div className="w-10 h-10 relative">
-                    <div className="relative bg-gradient-to-br from-cyan-400 to-teal-500 rounded-xl w-full h-full flex items-center justify-center overflow-hidden border-2 border-cyan-300 shadow-md">
-                      {/* Eyes */}
-                      <div className="flex space-x-1">
-                        <div className="bg-yellow-300 rounded-full w-[20%] h-[20%] flex items-center justify-center border border-yellow-400">
-                          <div className="bg-black rounded-full w-[50%] h-[50%]"></div>
-                        </div>
-                        <div className="bg-yellow-300 rounded-full w-[20%] h-[20%] flex items-center justify-center border border-yellow-400">
-                          <div className="bg-black rounded-full w-[50%] h-[50%]"></div>
-                        </div>
-                      </div>
-
-                      {/* Antenna */}
-                      <div className="absolute -top-1 left-1/2 transform -translate-x-1/2">
-                        <div className="w-[2px] h-[5px] bg-slate-600"></div>
-                        <div className="w-[4px] h-[4px] rounded-full bg-red-500 animate-pulse"></div>
-                      </div>
-
-                      {/* Mouth */}
-                      <div className="absolute bottom-[15%] w-[40%] h-[2px] bg-slate-700 rounded-full"></div>
-                    </div>
-                  </div>
+                  <Image
+                    src="/logo.png"
+                    alt="ShinoLearn Logo"
+                    className="drop-shadow-2xl pr-3"
+                    width={70}
+                    height={70}
+                  />
                   <span className="ml-2 font-bold text-xl hidden sm:block">
                     ShinoLearn
                   </span>
@@ -442,7 +427,7 @@ export default function DashboardLayout({ children }) {
       <div className="flex flex-col md:flex-row pt-16">
         {/* Main content */}
         <main className="flex-1 ">
-          <div className="bg-gradient-to-b from-cyan-50 via-white to-cyan-50 min-h-screen">
+          <div className="bg-[#F8FAFC] min-h-screen">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 md:px-8">
               {children}
             </div>

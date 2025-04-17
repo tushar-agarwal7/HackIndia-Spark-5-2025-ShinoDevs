@@ -7,6 +7,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import ErrorMessage from "@/components/ui/ErrorMessage";
 import RobotAvatar from "@/components/RobotAvatar";
 import { motion } from "framer-motion";
+import Image from "next/image";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -16,7 +17,13 @@ export default function Dashboard() {
   const [todayChallenge, setTodayChallenge] = useState(null);
   const [activityData, setActivityData] = useState([]);
 
-const [error, setError] = useState(null);
+  const [expanded, setExpanded] = useState(false);
+
+  const handleClick = () => {
+    setExpanded(!expanded);
+  };
+
+  const [error, setError] = useState(null);
   const [learningStats, setLearningStats] = useState({
     totalMinutesPracticed: 0,
     vocabularySize: 0,
@@ -232,27 +239,49 @@ const [error, setError] = useState(null);
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
       {/* Robot mascot floating in corner - replaced with EnhancedRobotAvatar */}
-      <div className="fixed bottom-20 right-1 hidden lg:block z-10 w-[350px]">
-        <motion.div 
-          initial={{ y: 10 }}
-          animate={{ y: [0, -10, 0] }}
-          transition={{ 
-            duration: 5,
-            repeat: Infinity,
-            repeatType: "mirror",
-            ease: "easeInOut"
+      <div className="fixed bottom-20 right-1 hidden lg:block z-10">
+        <motion.div
+          initial={{ width: 150 }}
+          animate={{
+            width: expanded ? 350 : 150,
+            y: expanded ? 0 : [0, -10, 0],
           }}
+          transition={{
+            width: { duration: 0.3, ease: "easeOut" },
+            y: {
+              duration: 5,
+              repeat: expanded ? 0 : Infinity,
+              repeatType: "mirror",
+              ease: "easeInOut",
+            },
+          }}
+          onClick={handleClick}
+          className="cursor-pointer"
         >
-          <RobotAvatar size="large" userProfile={profile} />
+          <div className="w-full">
+            <RobotAvatar
+              size={expanded ? "large" : "medium"}
+              userProfile={profile}
+            />
+          </div>
         </motion.div>
       </div>
 
       {/* Dashboard Header */}
-      <header className="bg-white shadow-sm py-4 px-6">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
+      <header className="bg-white shadow-sm px-6">
+        <div className="max-w-7xl mx-auto flex justify-between items-center py-3">
           <div className="flex items-center">
-            <div className="mr-3">
+            {/* <div className="mr-3">
               <RobotAvatar size="small" userProfile={profile} showSpeechBubble={false} />
+            </div> */}
+            <div>
+              <Image
+                src="/logo.png"
+                alt="ShinoLearn Logo"
+                className="drop-shadow-2xl pr-4"
+                width={80}
+                height={80}
+              />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-800">
@@ -406,9 +435,7 @@ const [error, setError] = useState(null);
                 <LearningPath
                   language={profile.learningLanguages[0].languageCode}
                   level={profile.learningLanguages[0].proficiencyLevel}
-                  onSelectLesson={(lessonId) =>
-                    router.push(`/dashboard/learn`)
-                  }
+                  onSelectLesson={(lessonId) => router.push(`/dashboard/learn`)}
                 />
               ) : (
                 <div className="text-center py-8">
@@ -556,7 +583,6 @@ const [error, setError] = useState(null);
   );
 }
 
-
 // Today's Challenge Component
 function TodaysChallenge({ challenge, onStart }) {
   const getLanguageFlag = (code) => {
@@ -681,8 +707,6 @@ function LearningStats({ stats }) {
             }
             color="cyan"
           />
-
-         
 
           <StatCard
             title="Current Streak"
@@ -1174,7 +1198,6 @@ function LearningPath({ language, level, onSelectLesson }) {
           { id: 2, title: "Basic Conversation", completed: true },
           { id: 3, title: "Vocabularies", current: true },
           { id: 4, title: "Practive with AI Voice Tutor", locked: false },
-        
         ];
 
         setLessons(sampleLessons);
