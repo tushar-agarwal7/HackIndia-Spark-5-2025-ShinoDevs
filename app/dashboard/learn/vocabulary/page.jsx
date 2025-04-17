@@ -770,16 +770,7 @@ const EnhancedLoadingScreen = ({ languageCode }) => {
         We're preparing an optimal learning experience for your {getLanguageName(languageCode)} skills
       </p>
       
-      {/* Fun fact card */}
-      <div className="bg-white w-full max-w-md rounded-xl shadow-md p-6 mb-6 transform transition-all hover:shadow-lg border border-gray-100">
-        <h3 className="font-bold text-gray-800 mb-3 flex items-center">
-          <span className="mr-2">✨</span>
-          Word of the moment
-        </h3>
-        <div className="text-2xl font-medium text-gray-900 mb-2">{wordOfMoment.word}</div>
-        <p className="text-gray-600">{wordOfMoment.meaning}</p>
-      </div>
-      
+    
       {/* Learning tip */}
       <div className="bg-gradient-to-r from-cyan-50 to-purple-50 w-full max-w-md rounded-xl p-5 border border-cyan-100">
         <h3 className="font-medium text-gray-800 mb-2 flex items-center">
