@@ -69,7 +69,15 @@ function parseGeneratedResponse(content, languageCode) {
     let parsedData;
     
     try {
-      parsedData = JSON.parse(content);
+      // First, try to remove any markdown code fence if present
+      let cleanContent = content;
+      if (content.includes('```json')) {
+        cleanContent = content.replace(/```json\n|\n```/g, '');
+      } else if (content.includes('```')) {
+        cleanContent = content.replace(/```\n|\n```/g, '');
+      }
+      
+      parsedData = JSON.parse(cleanContent);
     } catch (parseError) {
       // If direct parsing fails, try to extract JSON from the text
       console.error("Error directly parsing JSON:", parseError);

@@ -518,37 +518,15 @@ export default function VocabularyPracticePage() {
       </div>
     );
   };
-
-  // Render loading state
   if (isLoading || isGeneratingQuestions) {
     return (
       <DashboardLayout>
         <div className="container mx-auto py-12 px-4">
-          <div className="flex flex-col justify-center items-center min-h-[400px]">
-            <div className="relative">
-              <div className="w-16 h-16 border-4 border-cyan-200 border-t-cyan-500 rounded-full animate-spin"></div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-8 h-8 bg-white rounded-full"></div>
-              </div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <div className="w-6 h-6 border-2 border-teal-200 border-t-teal-500 rounded-full animate-spin"></div>
-              </div>
-            </div>
-            <p className="mt-6 text-lg font-medium text-gray-700">
-              {isGeneratingQuestions
-                ? "Crafting your vocabulary challenge..."
-                : "Loading practice..."}
-            </p>
-            <p className="text-sm text-gray-500 mt-2 max-w-xs text-center">
-              We're preparing personalized vocabulary content for your learning
-              journey
-            </p>
-          </div>
+          <EnhancedLoadingScreen languageCode={languageCode || "en"} />
         </div>
       </DashboardLayout>
     );
   }
-
   // Render error state
   if (error) {
     return (
@@ -647,3 +625,169 @@ export default function VocabularyPracticePage() {
     </DashboardLayout>
   );
 }
+
+
+// Enhanced loading component for vocabulary practice
+// To be inserted in app/dashboard/learn/vocabulary/page.jsx
+
+const EnhancedLoadingScreen = ({ languageCode }) => {
+  const [loadingPhase, setLoadingPhase] = useState(0);
+  const [currentTip, setCurrentTip] = useState('');
+  const [wordOfMoment, setWordOfMoment] = useState({ word: '', meaning: '' });
+  
+  // Random vocabulary learning tips
+  const learningTips = [
+    "Associate new words with images rather than translations to build direct connections",
+    "Use new vocabulary in sentences right away to help with long-term retention",
+    "Study vocabulary in thematic groups rather than random lists",
+    "Review words just before you would naturally forget them (spaced repetition)",
+    "Practice little and often rather than cramming in long sessions",
+    "Connect new words to personal experiences to make them more memorable",
+    "Reading extensively in your target language exposes you to vocabulary in context",
+    "Say words out loud to engage your auditory memory",
+    "Create flashcards with context sentences rather than isolated words",
+    "Look for patterns in word formation to help predict meanings of new words"
+  ];
+  
+  // Fun facts about language learning by language
+  const getFunFacts = (code) => {
+    const facts = {
+      ja: [
+        { word: "木", meaning: "tree - The kanji character resembles a tree with branches" },
+        { word: "言葉", meaning: "language - Literally means 'leaf of words'" },
+        { word: "猫", meaning: "cat - 'Neko' is one of the first words many learners remember" }
+      ],
+      es: [
+        { word: "mariposa", meaning: "butterfly - From 'María pósate' (Mary, alight)" },
+        { word: "paraguas", meaning: "umbrella - Literally means 'for water'" },
+        { word: "estrella", meaning: "star - Derived from Latin 'stella'" }
+      ],
+      fr: [
+        { word: "aujourd'hui", meaning: "today - Literally means 'on the day of today'" },
+        { word: "pomme de terre", meaning: "potato - Literally means 'apple of earth'" },
+        { word: "chauve-souris", meaning: "bat - Literally means 'bald mouse'" }
+      ],
+      de: [
+        { word: "Handschuhe", meaning: "gloves - Literally means 'hand shoes'" },
+        { word: "Fernseher", meaning: "television - Literally means 'far seer'" },
+        { word: "Kühlschrank", meaning: "refrigerator - Literally means 'cool cabinet'" }
+      ],
+      zh: [
+        { word: "电脑", meaning: "computer - Literally means 'electric brain'" },
+        { word: "手机", meaning: "mobile phone - Literally means 'hand machine'" },
+        { word: "熊猫", meaning: "panda - Literally means 'bear cat'" }
+      ],
+      // Default English
+      en: [
+        { word: "breakfast", meaning: "morning meal - Originally meant 'breaking the fast' of the night" },
+        { word: "goodbye", meaning: "farewell - Contraction of 'God be with ye'" },
+        { word: "deadline", meaning: "time limit - Originally a line drawn around a prison beyond which prisoners would be shot" }
+      ]
+    };
+    
+    return facts[code] || facts.en;
+  };
+  
+  useEffect(() => {
+    // Change loading messages at intervals to keep user engaged
+    const interval = setInterval(() => {
+      setLoadingPhase((prevPhase) => (prevPhase + 1) % 4);
+      setCurrentTip(learningTips[Math.floor(Math.random() * learningTips.length)]);
+      
+      const facts = getFunFacts(languageCode);
+      setWordOfMoment(facts[Math.floor(Math.random() * facts.length)]);
+    }, 4000);
+    
+    // Set initial values
+    setCurrentTip(learningTips[Math.floor(Math.random() * learningTips.length)]);
+    const facts = getFunFacts(languageCode);
+    setWordOfMoment(facts[Math.floor(Math.random() * facts.length)]);
+    
+    return () => clearInterval(interval);
+  }, [languageCode]);
+  
+  // Get loading messages based on current phase
+  const getLoadingMessage = () => {
+    switch (loadingPhase) {
+      case 0:
+        return "Creating your personalized vocabulary challenge...";
+      case 1:
+        return "Selecting the perfect words for your level...";
+      case 2:
+        return "Crafting engaging questions...";
+      case 3:
+        return "Almost ready! Finalizing your practice session...";
+      default:
+        return "Loading...";
+    }
+  };
+  
+  // Get language name from code
+  const getLanguageName = (code) => {
+    const languages = {
+      en: "English",
+      es: "Spanish",
+      fr: "French",
+      de: "German",
+      it: "Italian",
+      ja: "Japanese",
+      ko: "Korean",
+      zh: "Chinese",
+      ru: "Russian",
+      pt: "Portuguese",
+      ar: "Arabic",
+      hi: "Hindi"
+    };
+    
+    return languages[code] || code;
+  };
+  
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[500px] px-4 text-center">
+      {/* Animated loading indicator */}
+      <div className="relative mb-8">
+        <div className="w-24 h-24 border-4 border-cyan-100 rounded-full"></div>
+        <div className="absolute top-0 left-0 w-24 h-24 border-4 border-transparent border-t-cyan-500 rounded-full animate-spin"></div>
+        
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center">
+            <div className="w-12 h-12 border-3 border-purple-100 rounded-full"></div>
+            <div className="absolute w-12 h-12 border-3 border-transparent border-t-purple-500 rounded-full animate-spin" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }}></div>
+            
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="w-6 h-6 bg-gradient-to-br from-cyan-400 to-purple-500 rounded-full animate-pulse"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Dynamic loading text */}
+      <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-500 to-purple-500 bg-clip-text text-transparent mb-3 animate-pulse">
+        {getLoadingMessage()}
+      </h2>
+      
+      <p className="text-gray-600 max-w-md mb-8">
+        We're preparing an optimal learning experience for your {getLanguageName(languageCode)} skills
+      </p>
+      
+      {/* Fun fact card */}
+      <div className="bg-white w-full max-w-md rounded-xl shadow-md p-6 mb-6 transform transition-all hover:shadow-lg border border-gray-100">
+        <h3 className="font-bold text-gray-800 mb-3 flex items-center">
+          <span className="mr-2">✨</span>
+          Word of the moment
+        </h3>
+        <div className="text-2xl font-medium text-gray-900 mb-2">{wordOfMoment.word}</div>
+        <p className="text-gray-600">{wordOfMoment.meaning}</p>
+      </div>
+      
+      {/* Learning tip */}
+      <div className="bg-gradient-to-r from-cyan-50 to-purple-50 w-full max-w-md rounded-xl p-5 border border-cyan-100">
+        <h3 className="font-medium text-gray-800 mb-2 flex items-center">
+          <span className="mr-2">💡</span>
+          Vocabulary Tip
+        </h3>
+        <p className="text-gray-600 text-sm">{currentTip}</p>
+      </div>
+    </div>
+  );
+};

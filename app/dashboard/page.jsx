@@ -1,4 +1,3 @@
-// app/dashboard/page.jsx - Improved version with real data fetching
 "use client";
 
 import { useEffect, useState } from "react";
@@ -6,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import ErrorMessage from "@/components/ui/ErrorMessage";
+import RobotAvatar from "@/components/RobotAvatar";
+import { motion } from "framer-motion";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -14,7 +15,8 @@ export default function Dashboard() {
   const [activeChallenges, setActiveChallenges] = useState([]);
   const [todayChallenge, setTodayChallenge] = useState(null);
   const [activityData, setActivityData] = useState([]);
-  const [error, setError] = useState(null);
+
+const [error, setError] = useState(null);
   const [learningStats, setLearningStats] = useState({
     totalMinutesPracticed: 0,
     vocabularySize: 0,
@@ -229,9 +231,20 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800">
-      {/* Robot mascot floating in corner */}
-      <div className="fixed bottom-20 right-6 hidden lg:block z-10 animate-float">
-        <RobotAvatar size="large" />
+      {/* Robot mascot floating in corner - replaced with EnhancedRobotAvatar */}
+      <div className="fixed bottom-20 right-1 hidden lg:block z-10 w-[350px]">
+        <motion.div 
+          initial={{ y: 10 }}
+          animate={{ y: [0, -10, 0] }}
+          transition={{ 
+            duration: 5,
+            repeat: Infinity,
+            repeatType: "mirror",
+            ease: "easeInOut"
+          }}
+        >
+          <RobotAvatar size="large" userProfile={profile} />
+        </motion.div>
       </div>
 
       {/* Dashboard Header */}
@@ -239,7 +252,7 @@ export default function Dashboard() {
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center">
             <div className="mr-3">
-              <RobotAvatar size="small" />
+              <RobotAvatar size="small" userProfile={profile} showSpeechBubble={false} />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-800">
@@ -363,7 +376,7 @@ export default function Dashboard() {
           </div>
 
           {/* Learning Path Section */}
-          <div className="mt-8">
+          <div className="mt-8 mb-10">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-xl font-bold text-slate-800">
                 Your Learning Path
@@ -543,42 +556,6 @@ export default function Dashboard() {
   );
 }
 
-// Robot Avatar Component
-function RobotAvatar({ size = "medium" }) {
-  const sizeClasses = {
-    small: "w-10 h-10",
-    medium: "w-16 h-16",
-    large: "w-24 h-24",
-  };
-
-  return (
-    <div className={`relative ${sizeClasses[size]}`}>
-      <div className="relative bg-gradient-to-br from-cyan-400 to-teal-500 rounded-2xl w-full h-full flex items-center justify-center overflow-hidden border-2 border-cyan-300 shadow-md">
-        {/* Eyes */}
-        <div className="flex space-x-2">
-          <div className="bg-yellow-300 rounded-full w-1/4 h-1/4 flex items-center justify-center border border-yellow-400">
-            <div className="bg-black rounded-full w-1/2 h-1/2"></div>
-          </div>
-          <div className="bg-yellow-300 rounded-full w-1/4 h-1/4 flex items-center justify-center border border-yellow-400">
-            <div className="bg-black rounded-full w-1/2 h-1/2"></div>
-          </div>
-        </div>
-
-        {/* Antenna */}
-        <div className="absolute -top-2 left-1/2 transform -translate-x-1/2">
-          <div className="w-1 h-3 bg-slate-600"></div>
-          <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-        </div>
-
-        {/* Mouth */}
-        <div className="absolute bottom-2 w-1/2 h-1 bg-slate-700 rounded-full"></div>
-      </div>
-
-      {/* Shadow effect */}
-      <div className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-4/5 h-1 bg-black opacity-10 rounded-full blur-sm"></div>
-    </div>
-  );
-}
 
 // Today's Challenge Component
 function TodaysChallenge({ challenge, onStart }) {
@@ -705,27 +682,7 @@ function LearningStats({ stats }) {
             color="cyan"
           />
 
-          <StatCard
-            title="Vocabulary"
-            value={`${stats.vocabularySize || 0} words`}
-            icon={
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6 text-purple-500"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"
-                />
-              </svg>
-            }
-            color="purple"
-          />
+         
 
           <StatCard
             title="Current Streak"

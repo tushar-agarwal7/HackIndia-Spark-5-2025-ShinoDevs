@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import ErrorMessage from "@/components/ui/ErrorMessage";
+import { motion, AnimatePresence } from "framer-motion";
+import AdvancedAITutorAvatar from "@/components/learn/AdvancedAITutorAvatar";
 
 export default function SpeakingPracticePage() {
   const router = useRouter();
@@ -25,8 +27,11 @@ export default function SpeakingPracticePage() {
   const [availableTopics, setAvailableTopics] = useState([]);
   const [userFeedback, setUserFeedback] = useState(null);
   const [callEnded, setCallEnded] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [avatarType, setAvatarType] = useState("robot");
   const iframeRef = useRef(null);
   const durationTimerRef = useRef(null);
+  const webRTCContainerRef = useRef(null);
 
   useEffect(() => {
     // Load language and challenge data from URL parameters
@@ -358,6 +363,15 @@ First, greet the student in ${languageName} and introduce yourself as their lang
         if (event.data.event === "CALL_STARTED") {
           setCallStatus("active");
         }
+
+        // Handle speaking state
+        if (event.data.event === "AGENT_SPEAKING_STARTED") {
+          setIsSpeaking(true);
+        }
+        
+        if (event.data.event === "AGENT_SPEAKING_ENDED") {
+          setIsSpeaking(false);
+        }
       }
     };
 
@@ -385,7 +399,12 @@ First, greet the student in ${languageName} and introduce yourself as their lang
   // Render topic selection
   const renderTopicSelection = () => {
     return (
-      <div className="space-y-6">
+      <motion.div 
+        className="space-y-6"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-900">
             Speaking Practice
@@ -396,95 +415,149 @@ First, greet the student in ${languageName} and introduce yourself as their lang
           </p>
         </div>
 
-        <div className="bg-white shadow-sm rounded-lg p-6 border border-gray-200">
-          <h2 className="text-lg font-medium text-gray-900 mb-4">
-            Select a Conversation Topic
-          </h2>
-
-          <div className="space-y-3 mb-6">
-            {availableTopics.map((topic, index) => (
-              <div
-                key={index}
-                className={`p-3 rounded-lg border ${
-                  selectedTopic === topic
-                    ? "bg-amber-50 border-amber-500"
-                    : "border-gray-200 hover:border-gray-300"
-                } cursor-pointer transition-colors`}
-                onClick={() => setSelectedTopic(topic)}
-              >
-                <div className="flex items-center">
-                  <div
-                    className={`w-6 h-6 rounded-full mr-3 flex items-center justify-center ${
-                      selectedTopic === topic
-                        ? "bg-amber-500 text-white"
-                        : "bg-gray-100"
-                    }`}
-                  >
-                    {index + 1}
+        <div className="flex flex-col md:flex-row gap-6">
+          <div className="w-full md:w-1/3">
+            <div className="bg-white shadow-sm rounded-lg p-4 border border-gray-200 mb-4">
+        
+              <div className="flex  justify-center gap-2 mb-4">
+                <motion.div 
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  className={`p-2 rounded-lg border-2 cursor-pointer ${
+                    avatarType === 'robot' 
+                      ? 'border-amber-500 bg-amber-50' 
+                      : 'border-gray-200 hover:border-amber-300'
+                  }`}
+                  onClick={() => setAvatarType('robot')}
+                >
+                  <div className="aspect-square h-[100px] bg-gradient-to-b from-slate-700 to-slate-900 rounded-lg flex items-center justify-center text-white text-2xl">
+                    🤖
                   </div>
-                  <span className="text-gray-900">{topic}</span>
+                  <p className="text-xs text-center mt-1">Robot</p>
+                </motion.div>
+
+               
+              </div>
+
+              <div className="mt-4">
+                <AdvancedAITutorAvatar 
+                  isActive={true}
+                  isSpeaking={false}
+                  languageCode={languageCode}
+                  avatarType={avatarType}
+                />
+
+                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800">
+                  <h3 className="font-medium mb-2">Meet Your AI Tutor</h3>
+                  <p className="text-sm">Your personal language tutor will guide you through this conversation practice, providing feedback and corrections.</p>
                 </div>
               </div>
-            ))}
-          </div>
-
-          <div className="mt-6">
-            <h3 className="text-md font-medium text-gray-700 mb-2">
-              Or suggest your own topic:
-            </h3>
-            <div className="flex space-x-2">
-              <input
-                type="text"
-                value={
-                  selectedTopic === availableTopics.includes(selectedTopic)
-                    ? ""
-                    : selectedTopic
-                }
-                onChange={(e) => setSelectedTopic(e.target.value)}
-                placeholder="Enter a custom topic..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
-              />
             </div>
           </div>
 
-          <div className="mt-6 flex justify-end">
-            <button
-              onClick={startSpeakingPractice}
-              disabled={!selectedTopic}
-              className="cursor-pointer px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg disabled:opacity-50"
-            >
-              Start Speaking Practice
-            </button>
+          <div className="w-full md:w-2/3">
+            <div className="bg-white shadow-sm rounded-lg p-6 border border-gray-200">
+              <h2 className="text-lg font-medium text-gray-900 mb-4">
+                Select a Conversation Topic
+              </h2>
+
+              <div className="space-y-3 mb-6">
+                {availableTopics.map((topic, index) => (
+                  <motion.div
+                    key={index}
+                    whileHover={{ x: 5 }}
+                    className={`p-3 rounded-lg border ${
+                      selectedTopic === topic
+                        ? 'bg-amber-50 border-amber-500'
+                        : 'border-gray-200 hover:border-gray-300'
+                    } cursor-pointer transition-colors`}
+                    onClick={() => setSelectedTopic(topic)}
+                  >
+                    <div className="flex items-center">
+                      <div
+                        className={`w-6 h-6 rounded-full mr-3 flex items-center justify-center ${
+                          selectedTopic === topic
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-gray-100'
+                        }`}
+                      >
+                        {index + 1}
+                      </div>
+                      <span className="text-gray-900">{topic}</span>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+
+              <div className="mt-6">
+                <h3 className="text-md font-medium text-gray-700 mb-2">
+                  Or suggest your own topic:
+                </h3>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={
+                      availableTopics.includes(selectedTopic)
+                        ? ''
+                        : selectedTopic
+                    }
+                    onChange={(e) => setSelectedTopic(e.target.value)}
+                    placeholder="Enter a custom topic..."
+                    className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={startSpeakingPractice}
+                  disabled={!selectedTopic}
+                  className="cursor-pointer px-6 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg disabled:opacity-50 font-medium flex items-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                  </svg>
+                  Start Speaking Practice
+                </motion.button>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800 mt-4">
+              <h3 className="font-medium mb-2">How Speaking Practice Works</h3>
+              <ul className="list-disc list-inside space-y-1 text-sm">
+                <li>You'll have a real conversation with our AI language tutor</li>
+                <li>
+                  Speak naturally and try to express your thoughts in{" "}
+                  {getLanguageName(languageCode)}
+                </li>
+                <li>
+                  The tutor will adjust to your proficiency level and help you
+                  improve
+                </li>
+                <li>
+                  You'll receive feedback on your pronunciation, fluency, and
+                  grammar
+                </li>
+                <li>Allow microphone access when prompted</li>
+              </ul>
+            </div>
           </div>
         </div>
-
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800">
-          <h3 className="font-medium mb-2">How Speaking Practice Works</h3>
-          <ul className="list-disc list-inside space-y-1 text-sm">
-            <li>You'll have a real conversation with our AI language tutor</li>
-            <li>
-              Speak naturally and try to express your thoughts in{" "}
-              {getLanguageName(languageCode)}
-            </li>
-            <li>
-              The tutor will adjust to your proficiency level and help you
-              improve
-            </li>
-            <li>
-              You'll receive feedback on your pronunciation, fluency, and
-              grammar
-            </li>
-            <li>Allow microphone access when prompted</li>
-          </ul>
-        </div>
-      </div>
+      </motion.div>
     );
   };
 
   // Render active call with WebRTC
   const renderWebRTCCall = () => {
     return (
-      <div className="space-y-6">
+      <motion.div 
+        className="space-y-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.5 }}
+      >
         <div className="flex justify-between items-center mb-4">
           <h1 className="text-xl font-bold text-gray-900">
             Speaking Practice: {selectedTopic}
@@ -506,76 +579,95 @@ First, greet the student in ${languageName} and introduce yourself as their lang
           </div>
         </div>
 
-        <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
-          <div className="aspect-w-16 aspect-h-9 relative">
-            {joinUrl && (
-              <iframe
-                ref={iframeRef}
-                src={joinUrl}
-                className="w-full h-[600px] border-0"
-                allow="camera; microphone; clipboard-write"
-                onLoad={() => setIframeLoaded(true)}
-              ></iframe>
-            )}
-
-            {!iframeLoaded && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100">
-                <LoadingSpinner size="large" />
-                <p className="mt-4 text-gray-600">
-                  Connecting to your speaking practice session...
-                </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Avatar section - 1/3 of width on medium+ screens */}
+          <div className="md:col-span-1">
+            <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200">
+              <div className="p-4 border-b border-gray-200">
+                <h2 className="font-medium text-gray-900">Your AI Tutor</h2>
               </div>
-            )}
+              
+              <div className="p-4">
+                <AdvancedAITutorAvatar 
+                  isActive={true}
+                  isSpeaking={isSpeaking}
+                  languageCode={languageCode}
+                  avatarType={avatarType}
+                />
+                
+                <div className="mt-4">
+                  <div className="flex items-center mb-2">
+                    <div className={`w-2 h-2 rounded-full ${isSpeaking ? 'bg-green-500 animate-pulse' : 'bg-gray-300'} mr-2`}></div>
+                    <span className="text-sm font-medium text-gray-700">
+                      {isSpeaking ? 'AI is speaking...' : 'AI is listening...'}
+                    </span>
+                  </div>
+                  
+                  <div className="bg-gray-100 rounded-lg p-3">
+                    <h3 className="text-sm font-medium text-gray-700 mb-1">Practicing</h3>
+                    <p className="text-sm text-gray-600">
+                      <span className="font-medium">{getLanguageName(languageCode)}</span> - {
+                        proficiencyLevel.charAt(0) + proficiencyLevel.slice(1).toLowerCase()
+                      } Level
+                    </p>
+                    <p className="text-sm text-gray-600 mt-1">Topic: {selectedTopic}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800">
+              <h3 className="font-medium mb-2">Speaking Tips</h3>
+              <ul className="text-xs space-y-1">
+                <li>• Speak naturally at a comfortable pace</li>
+                <li>• Mistakes are part of learning - keep going!</li>
+                <li>• Ask for repetition if needed</li>
+                <li>• Use vocabulary you know</li>
+              </ul>
+            </div>
           </div>
 
-          <div className="p-4 border-t border-gray-200">
-            <div className="flex justify-between items-center">
-              <div>
-                <p className="text-sm text-gray-600">
-                  Practicing:{" "}
-                  <span className="font-medium text-gray-900">
-                    {getLanguageName(languageCode)}
-                  </span>
-                </p>
-                <p className="text-sm text-gray-600">
-                  Topic:{" "}
-                  <span className="font-medium text-gray-900">
-                    {selectedTopic}
-                  </span>
-                </p>
+          {/* WebRTC section - 2/3 of width on medium+ screens */}
+          <div className="md:col-span-2">
+            <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200" ref={webRTCContainerRef}>
+              <div className="relative bg-gray-100">
+                {joinUrl && (
+                  <iframe
+                    ref={iframeRef}
+                    src={joinUrl}
+                    className="w-full h-[500px] border-0"
+                    allow="camera; microphone; clipboard-write"
+                    onLoad={() => setIframeLoaded(true)}
+                  ></iframe>
+                )}
+
+                {!iframeLoaded && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100">
+                    <LoadingSpinner size="large" />
+                    <p className="mt-4 text-gray-600">
+                      Connecting to your speaking practice session...
+                    </p>
+                  </div>
+                )}
               </div>
 
-              <button
-                onClick={endSpeakingPractice}
-                className="cursor-pointer px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg"
-              >
-                End Practice
-              </button>
+              <div className="p-4 border-t border-gray-200">
+                <motion.button
+                  whileHover={{ scale: 1.05 }}
+                  whileTap={{ scale: 0.95 }}
+                  onClick={endSpeakingPractice}
+                  className="cursor-pointer px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg w-full flex items-center justify-center"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+                  </svg>
+                  End Practice Session
+                </motion.button>
+              </div>
             </div>
           </div>
         </div>
-
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-amber-800">
-          <h3 className="font-medium mb-2">
-            Tips for a Great Practice Session
-          </h3>
-          <ul className="list-disc list-inside space-y-1 text-sm">
-            <li>Speak clearly and at a comfortable pace</li>
-            <li>
-              Don't worry about making mistakes - they're part of learning!
-            </li>
-            <li>Try to express your thoughts using vocabulary you know</li>
-            <li>
-              If you don't understand something, ask: "Could you repeat that?"
-              or "Could you speak more slowly?"
-            </li>
-            <li>
-              Take your time to formulate responses - pauses are natural in
-              conversation
-            </li>
-          </ul>
-        </div>
-      </div>
+      </motion.div>
     );
   };
 
@@ -608,7 +700,12 @@ First, greet the student in ${languageName} and introduce yourself as their lang
       : [];
 
     return (
-      <div className="text-center">
+      <motion.div 
+        className="text-center"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">
             Practice Complete!
@@ -675,10 +772,12 @@ First, greet the student in ${languageName} and introduce yourself as their lang
                         </span>
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${stat.value}%` }}
+                          transition={{ duration: 1, delay: index * 0.2 }}
                           className={`${stat.color} h-2 rounded-full`}
-                          style={{ width: `${stat.value}%` }}
-                        ></div>
+                        ></motion.div>
                       </div>
                     </div>
                   ))}
@@ -702,7 +801,9 @@ First, greet the student in ${languageName} and introduce yourself as their lang
           </div>
 
           <div className="flex flex-col space-y-3">
-            <button
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
               onClick={() => {
                 setCallStatus("idle");
                 setCallEnded(false);
@@ -712,20 +813,22 @@ First, greet the student in ${languageName} and introduce yourself as their lang
                 setCallDuration(0);
                 setUserFeedback(null);
               }}
-              className="cursor-pointer px-4 py-2 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg"
+              className="cursor-pointer px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg font-medium"
             >
               Practice Again
-            </button>
+            </motion.button>
 
-            <button
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
               onClick={() => router.push("/dashboard/learn")}
-              className="cursor-pointer px-4 py-2 border border-gray-300 text-gray-700 rounded-lg"
+              className="cursor-pointer px-4 py-3 border border-gray-300 text-gray-700 rounded-lg"
             >
               Return to Dashboard
-            </button>
+            </motion.button>
           </div>
         </div>
-      </div>
+      </motion.div>
     );
   };
 
@@ -762,10 +865,12 @@ First, greet the student in ${languageName} and introduce yourself as their lang
   return (
     <DashboardLayout>
       <div className="container mx-auto py-8 px-4">
-        <div className="max-w-3xl mx-auto">
-          {callStatus === "idle" && !callEnded && renderTopicSelection()}
-          {["connecting", "active"].includes(callStatus) && renderWebRTCCall()}
-          {callEnded && renderResults()}
+        <div className="max-w-6xl mx-auto">
+          <AnimatePresence mode="wait">
+            {callStatus === "idle" && !callEnded && renderTopicSelection()}
+            {["connecting", "active"].includes(callStatus) && renderWebRTCCall()}
+            {callEnded && renderResults()}
+          </AnimatePresence>
         </div>
       </div>
     </DashboardLayout>

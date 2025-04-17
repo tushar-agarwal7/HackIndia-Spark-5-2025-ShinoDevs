@@ -8,9 +8,15 @@ export default function ConversationInterface({
   languageCode,
   userChallengeId,
 }) {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState([
+    // Initialize with the user's first message already displayed
+    {
+      sender: "user",
+      content: "Hello, I would like to practice conversation.",
+    }
+  ]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true); // Start with loading state
   const [conversationId, setConversationId] = useState(null);
   const [practiceTime, setPracticeTime] = useState(0);
   const [practiceStatus, setPracticeStatus] = useState({
@@ -114,7 +120,7 @@ export default function ConversationInterface({
     }
   };
 
-  // Start conversation with initial greeting
+  // Start conversation with initial greeting - but now the initial message is already displayed
   useEffect(() => {
     const startConversation = async () => {
       setIsLoading(true);
@@ -137,17 +143,17 @@ export default function ConversationInterface({
 
         const data = await response.json();
 
-        setMessages([
-          {
-            sender: "user",
-            content: "Hello, I would like to practice conversation.",
-          },
-          { sender: "ai", content: data.content },
+        // Only add the AI response since the user message is already displayed
+        setMessages((prevMessages) => [
+          ...prevMessages,
+          { sender: "ai", content: data.content }
         ]);
+        
         setConversationId(data.conversationId);
       } catch (error) {
         console.error("Error starting conversation:", error);
-        setMessages([
+        setMessages((prevMessages) => [
+          ...prevMessages,
           {
             sender: "system",
             content:
@@ -159,7 +165,7 @@ export default function ConversationInterface({
       }
     };
 
-    if (languageCode && messages.length === 0) {
+    if (languageCode && messages.length === 1) { // Only 1 message (user's initial greeting)
       startConversation();
     }
   }, [languageCode, userChallengeId]);

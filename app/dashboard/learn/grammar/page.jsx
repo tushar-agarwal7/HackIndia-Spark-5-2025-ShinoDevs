@@ -438,24 +438,15 @@ export default function GrammarPracticePage() {
     );
   };
 
-  // Render loading state
   if (isLoading || isGeneratingQuestions) {
     return (
       <DashboardLayout>
-        <div className="container mx-auto py-8 px-4">
-          <div className="flex flex-col justify-center items-center min-h-[400px]">
-            <LoadingSpinner size="large" />
-            <p className="mt-4 text-gray-500">
-              {isGeneratingQuestions
-                ? "Generating grammar questions..."
-                : "Loading practice..."}
-            </p>
-          </div>
+        <div className="container mx-auto py-12 px-4">
+          <EnhancedLoadingScreen languageCode={languageCode || "en"} />
         </div>
       </DashboardLayout>
     );
   }
-
   // Render error state
   if (error) {
     return (
@@ -513,3 +504,254 @@ export default function GrammarPracticePage() {
     </DashboardLayout>
   );
 }
+
+
+
+// Enhanced loading component for grammar practice
+// To be inserted in app/dashboard/learn/grammar/page.jsx
+
+const EnhancedLoadingScreen = ({ languageCode }) => {
+  const [loadingPhase, setLoadingPhase] = useState(0);
+  const [currentTip, setCurrentTip] = useState('');
+  const [grammarFact, setGrammarFact] = useState({ concept: '', explanation: '' });
+  
+  // Grammar learning tips
+  const learningTips = [
+    "Focus on grammar patterns rather than isolated rules to develop intuition",
+    "Practice with example sentences rather than memorizing conjugation tables",
+    "Listen to native speakers to internalize correct grammar naturally",
+    "Make mistakes and learn from them - errors are a natural part of language learning",
+    "Look for similarities between your native language and target language",
+    "Learn grammar in chunks or phrases to make it more applicable",
+    "Create your own example sentences to cement understanding",
+    "Speak out loud to practice applying grammar rules in real-time",
+    "Read extensively to see grammar in context",
+    "Learn one grammar concept thoroughly before moving to the next"
+  ];
+  
+  // Fun grammar facts by language
+  const getGrammarFacts = (code) => {
+    const facts = {
+      ja: [
+        { 
+          concept: "Particles", 
+          explanation: "Japanese particles (は, を, に, etc.) play a role similar to prepositions in English, but appear after the words they modify."
+        },
+        { 
+          concept: "Verb Conjugation", 
+          explanation: "Japanese verbs don't conjugate for person or number - the same form is used regardless of who is performing the action."
+        },
+        { 
+          concept: "Sentence Structure", 
+          explanation: "Japanese follows Subject-Object-Verb order, unlike English's Subject-Verb-Object structure."
+        }
+      ],
+      es: [
+        { 
+          concept: "Subjunctive Mood", 
+          explanation: "Spanish has an entire mood (subjunctive) dedicated to expressing doubt, desire, and hypothetical situations."
+        },
+        { 
+          concept: "Gender Agreement", 
+          explanation: "Spanish nouns have grammatical gender, and adjectives must agree with the gender of the noun they modify."
+        },
+        { 
+          concept: "Two 'To Be' Verbs", 
+          explanation: "Spanish has two verbs (ser and estar) that translate to 'to be' in English, used for different types of states."
+        }
+      ],
+      fr: [
+        { 
+          concept: "Liaison", 
+          explanation: "In French, silent consonants at the end of words are often pronounced when the next word begins with a vowel."
+        },
+        { 
+          concept: "Verb Conjugation", 
+          explanation: "French verbs have different conjugations for each subject pronoun, with many irregulars."
+        },
+        { 
+          concept: "Negation Structure", 
+          explanation: "French negation typically uses two parts (ne...pas) that surround the verb."
+        }
+      ],
+      de: [
+        { 
+          concept: "Verb Position", 
+          explanation: "In German main clauses, the verb must be in the second position, regardless of what comes first."
+        },
+        { 
+          concept: "Grammatical Cases", 
+          explanation: "German uses four cases (nominative, accusative, dative, genitive) that change article forms."
+        },
+        { 
+          concept: "Compound Words", 
+          explanation: "German can create extremely long compound nouns by joining multiple words together."
+        }
+      ],
+      zh: [
+        { 
+          concept: "No Conjugation", 
+          explanation: "Chinese verbs do not change form based on tense, person, or number - context provides this information."
+        },
+        { 
+          concept: "Measure Words", 
+          explanation: "Chinese requires specific classifier words between numbers and nouns, similar to saying 'a piece of paper'."
+        },
+        { 
+          concept: "Tones", 
+          explanation: "While not strictly grammar, Chinese uses tones to distinguish between words with the same pronunciation."
+        }
+      ],
+      // Default English
+      en: [
+        { 
+          concept: "Phrasal Verbs", 
+          explanation: "English has thousands of phrasal verbs (like 'give up' or 'look after') that change meaning based on the preposition."
+        },
+        { 
+          concept: "Future Tense", 
+          explanation: "English doesn't have a true future tense - we use auxiliary verbs like 'will' or present continuous."
+        },
+        { 
+          concept: "Articles", 
+          explanation: "The rules for using 'a', 'an', and 'the' are complex and often challenging for language learners."
+        }
+      ]
+    };
+    
+    return facts[code] || facts.en;
+  };
+  
+  useEffect(() => {
+    // Change loading messages at intervals to keep user engaged
+    const interval = setInterval(() => {
+      setLoadingPhase((prevPhase) => (prevPhase + 1) % 4);
+      setCurrentTip(learningTips[Math.floor(Math.random() * learningTips.length)]);
+      
+      const facts = getGrammarFacts(languageCode);
+      setGrammarFact(facts[Math.floor(Math.random() * facts.length)]);
+    }, 4000);
+    
+    // Set initial values
+    setCurrentTip(learningTips[Math.floor(Math.random() * learningTips.length)]);
+    const facts = getGrammarFacts(languageCode);
+    setGrammarFact(facts[Math.floor(Math.random() * facts.length)]);
+    
+    return () => clearInterval(interval);
+  }, [languageCode]);
+  
+  // Get loading messages based on current phase
+  const getLoadingMessage = () => {
+    switch (loadingPhase) {
+      case 0:
+        return "Analyzing grammar patterns for your level...";
+      case 1:
+        return "Creating targeted grammar exercises...";
+      case 2:
+        return "Building helpful explanations...";
+      case 3:
+        return "Almost ready! Finalizing your practice session...";
+      default:
+        return "Loading...";
+    }
+  };
+  
+  // Progress animation that moves based on loading phase
+  const getProgressWidth = () => {
+    const baseProgress = 15; // Minimum progress shown
+    const phaseProgress = loadingPhase * 20; // Each phase adds 20%
+    const randomVariation = Math.random() * 5; // Small random variation
+    
+    return Math.min(95, baseProgress + phaseProgress + randomVariation);
+  };
+  
+  // Get language name from code
+  const getLanguageName = (code) => {
+    const languages = {
+      en: "English",
+      es: "Spanish",
+      fr: "French",
+      de: "German",
+      it: "Italian",
+      ja: "Japanese",
+      ko: "Korean",
+      zh: "Chinese",
+      ru: "Russian",
+      pt: "Portuguese",
+      ar: "Arabic",
+      hi: "Hindi"
+    };
+    
+    return languages[code] || code;
+  };
+  
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[500px] px-4 text-center">
+      {/* Progress bar and indicator */}
+      <div className="w-full max-w-md mb-8">
+        <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-gradient-to-r from-green-300 via-green-400 to-green-500 rounded-full transition-all duration-1000 ease-in-out"
+            style={{ width: `${getProgressWidth()}%` }}
+          ></div>
+        </div>
+        
+        <div className="flex justify-between mt-2 text-sm text-gray-500">
+          <span>Preparing exercises</span>
+          <span>Ready to start</span>
+        </div>
+      </div>
+      
+      {/* Animated icon */}
+      <div className="relative w-20 h-20 mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-green-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-20 w-20 text-green-500 absolute top-0 left-0 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor" style={{ animationDuration: '2s' }}>
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      </div>
+      
+      {/* Dynamic loading text */}
+      <h2 className="text-2xl font-bold text-green-600 mb-3">
+        {getLoadingMessage()}
+      </h2>
+      
+      <p className="text-gray-600 max-w-md mb-8">
+        We're creating grammar exercises tailored to your {getLanguageName(languageCode)} proficiency level
+      </p>
+      
+      {/* Grammar fact card */}
+      <div className="bg-white w-full max-w-md rounded-xl shadow-md p-6 mb-6 border border-gray-100">
+        <h3 className="font-bold text-gray-800 mb-2 flex items-center">
+          <span className="text-green-500 mr-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+            </svg>
+          </span>
+          {getLanguageName(languageCode)} Grammar Fact
+        </h3>
+        <div className="font-medium text-gray-900 mb-2">{grammarFact.concept}</div>
+        <p className="text-gray-600 text-sm">{grammarFact.explanation}</p>
+      </div>
+      
+      {/* Learning tip */}
+      <div className="bg-green-50 w-full max-w-md rounded-xl p-5 border border-green-100">
+        <h3 className="font-medium text-gray-800 mb-2 flex items-center">
+          <span className="text-green-500 mr-2">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z" />
+            </svg>
+          </span>
+          Grammar Learning Tip
+        </h3>
+        <p className="text-gray-700 text-sm">{currentTip}</p>
+      </div>
+      
+      <p className="text-sm text-gray-400 mt-8 max-w-md">
+        The first time you use a language feature, our system needs to prepare custom questions. 
+        This process takes a moment but creates a better learning experience.
+      </p>
+    </div>
+  );
+};

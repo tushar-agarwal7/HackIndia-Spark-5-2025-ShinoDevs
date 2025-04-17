@@ -426,19 +426,7 @@ export default function ProfilePage() {
                   My Challenges
                 </button>
               </li>
-              
-              <li>
-                <button
-                  className={`inline-block p-4 rounded-t-lg ${
-                    activeTab === 'transactions'
-                      ? 'border-b-2 border-cyan-500 text-cyan-600'
-                      : 'hover:text-gray-600 hover:border-gray-300'
-                  }`}
-                  onClick={() => setActiveTab('transactions')}
-                >
-                  Transactions
-                </button>
-              </li>
+           
             </ul>
           </div>
           

@@ -405,7 +405,7 @@ export default function CreateChallengeForm() {
 
   // Render the form step
   const renderForm = () => (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6 mb-14">
       {error && <ErrorMessage message={error} dismiss={() => setError(null)} />}
 
       {renderNetworkWarning()}
