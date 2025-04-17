@@ -2,7 +2,6 @@
 import { NextResponse } from 'next/server';
 import { verifyAuth } from '@/lib/auth/verify';
 import { PrismaClient } from '@prisma/client';
-
 const prisma = new PrismaClient();
 
 export async function POST(request) {
@@ -10,39 +9,38 @@ export async function POST(request) {
     console.log('Starting speaking call...');
     // Verify authentication
     const auth = await verifyAuth();
-    
     if (!auth.success) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     }
     
     // Get request body
     const body = await request.json();
-    const { 
-      languageCode, 
-      proficiencyLevel, 
-      systemPrompt, 
+    const {
+      languageCode,
+      proficiencyLevel,
+      systemPrompt,
       voice,
       topic,
-      userChallengeId 
+      userChallengeId
     } = body;
-
+    
     console.log('Request body:', body);
     
     // Validate required fields
     if (!languageCode || !systemPrompt) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Language code and system prompt are required' 
+      return NextResponse.json({
+        success: false,
+        error: 'Language code and system prompt are required'
       }, { status: 400 });
     }
-
-    // Configure Ultravox API request
+    
+    // Configure Ultravox call directly
     const ultravoxConfig = {
-      systemPrompt,
-      model: "fixie-ai/ultravox",
-      voice:   "Jessica",
+      systemPrompt: systemPrompt,
+      model: "fixie-ai/ultravox", // Using the main model
+      voice: voice || "Jessica", // Use the voice parameter passed from frontend
       temperature: 0.7,
-      firstSpeaker: "FIRST_SPEAKER_AGENT",
+      firstSpeaker: "FIRST_SPEAKER_AGENT", // Agent speaks first in language learning context
       experimentalSettings: {
         metadata: {
           userId: auth.userId,
@@ -56,9 +54,10 @@ export async function POST(request) {
         webRtc: {}
       }
     };
+    
     console.log('Ultravox API config:', ultravoxConfig);
-
-    // Make request to Ultravox API
+    
+    // Make request to Ultravox API to create the call
     const response = await fetch('https://api.ultravox.ai/api/calls', {
       method: 'POST',
       headers: {
@@ -67,10 +66,17 @@ export async function POST(request) {
       },
       body: JSON.stringify(ultravoxConfig)
     });
-    console.log('Ultravox API response:', response);
-
+    
+    console.log('Ultravox API response status:', response.status);
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Ultravox API error:', errorData);
+      throw new Error(`Ultravox API error: ${response.status} - ${JSON.stringify(errorData)}`);
+    }
+    
     const data = await response.json();
-    console.log('Ultravox API response:', data);
+    console.log('Ultravox API response data:', data);
     
     // Check for errors
     if (!data.joinUrl) {
@@ -78,33 +84,32 @@ export async function POST(request) {
     }
     
     // Store call data in database
-  // Store call data in database
-  await prisma.speakingSession.create({
-    data: {
-      userId: auth.userId,
-      languageCode,
-      proficiencyLevel: proficiencyLevel || 'BEGINNER',
-      ultravoxCallId: data.callId,
-      topic: topic || '',
-      userChallengeId: userChallengeId || null,
-      startedAt: new Date(),
-      status: 'ACTIVE'
-    }
-  });
-
-  // Return success with call data
-  return NextResponse.json({ 
-    success: true, 
-    data: {
-      callId: data.callId,
-      joinUrl: data.joinUrl
-    } 
-  });
-} catch (error) {
-  console.error('Error creating speaking session call:', error);
-  return NextResponse.json(
-    { success: false, error: error.message || 'Failed to create speaking session' },
-    { status: 500 }
-  );
-}
+    await prisma.speakingSession.create({
+      data: {
+        userId: auth.userId,
+        languageCode,
+        proficiencyLevel: proficiencyLevel || 'BEGINNER',
+        ultravoxCallId: data.callId,
+        topic: topic || '',
+        userChallengeId: userChallengeId || null,
+        startedAt: new Date(),
+        status: 'ACTIVE'
+      }
+    });
+    
+    // Return success with call data
+    return NextResponse.json({
+      success: true,
+      data: {
+        callId: data.callId,
+        joinUrl: data.joinUrl
+      }
+    });
+  } catch (error) {
+    console.error('Error creating speaking session call:', error);
+    return NextResponse.json(
+      { success: false, error: error.message || 'Failed to create speaking session' },
+      { status: 500 }
+    );
+  }
 }

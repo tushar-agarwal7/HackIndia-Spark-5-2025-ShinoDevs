@@ -19,7 +19,6 @@ export default function SpeakingPracticePage() {
   const [userChallengeId, setUserChallengeId] = useState(null);
   const [joinUrl, setJoinUrl] = useState(null);
   const [callId, setCallId] = useState(null);
-  const [iframeLoaded, setIframeLoaded] = useState(false);
   const [callStartTime, setCallStartTime] = useState(null);
   const [callDuration, setCallDuration] = useState(0);
   const [callStatus, setCallStatus] = useState("idle"); // idle, connecting, active, completed, error
@@ -29,7 +28,9 @@ export default function SpeakingPracticePage() {
   const [callEnded, setCallEnded] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [avatarType, setAvatarType] = useState("robot");
-  const iframeRef = useRef(null);
+  const [transcript, setTranscript] = useState([]);
+  const [ultravoxSession, setUltravoxSession] = useState(null);
+  const [isMicActive, setIsMicActive] = useState(true);
   const durationTimerRef = useRef(null);
   const webRTCContainerRef = useRef(null);
 
@@ -109,6 +110,15 @@ export default function SpeakingPracticePage() {
       if (durationTimerRef.current) {
         clearInterval(durationTimerRef.current);
       }
+      
+      // End ultravox session if active
+      if (ultravoxSession) {
+        try {
+          ultravoxSession.leaveCall();
+        } catch (e) {
+          console.error("Error leaving call:", e);
+        }
+      }
     };
   }, [searchParams, router]);
 
@@ -164,22 +174,83 @@ export default function SpeakingPracticePage() {
 
   // Get appropriate voice for language
   const getVoiceForLanguage = (languageCode) => {
+    // Map language codes to Ultravox voice IDs
     const voices = {
-      en: "alloy",
-      es: "nova",
-      fr: "alloy",
-      de: "nova",
-      it: "alloy",
-      ja: "nova",
-      zh: "alloy",
-      ko: "nova",
-      ru: "alloy",
-      pt: "nova",
-      ar: "alloy",
-      hi: "nova",
+      en: "b0e6b5c1-3100-44d5-8578-9015aa3023ae", // Jessica voice ID
+      es: "b084d8f2-c9f9-491c-8059-d39dde80d58b", // Andrea-Spanish voice ID
+      fr: "ab4eaa72-5cf3-40c1-a921-bca62a884bb4", // Alize-French voice ID
+      de: "0191cf63-44b7-4277-bffe-be2f5dcc950c", // Susi-German voice ID
+      it: "ee16d0ab-a1fe-4ff1-a63c-3ad8a0fdee8a", // Linda-Italian voice ID
+      ja: "0985443f-644b-47a5-942a-39b2daf230fd", // Asahi-Japanese voice ID
+      zh: "8b79b46f-3b1c-4280-9521-2cac1b6eabd5", // Maya-Chinese voice ID
+      ko: "b0e6b5c1-3100-44d5-8578-9015aa3023ae", // Fallback to Jessica for Korean
+      ru: "a8244028-72c3-4ae6-9fbe-3ad3da168dda", // Nadia-Russian voice ID
+      pt: "2e6148f5-4c06-49db-8fa5-57bc30b31eeb", // Rosa-Portuguese voice ID
+      ar: "9d7bc57b-2e1c-4622-acb7-39c4f32dacfb", // Salma-Arabic voice ID
+      hi: "ebae2397-0ba1-4222-9d5b-5313ddeb04b5", // Anjali-Hindi-Urdu voice ID
     };
 
-    return voices[languageCode] || "alloy";
+    return voices[languageCode] || "b0e6b5c1-3100-44d5-8578-9015aa3023ae"; // Default to Jessica voice ID
+  };
+
+  // Initialize Ultravox session and join call
+  const initializeCall = async (joinUrl) => {
+    try {
+      // Dynamically import the ultravox-client library
+      const { UltravoxSession } = await import('ultravox-client');
+      
+      // Create a new audio context
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      
+      // Initialize the Ultravox session
+      const session = new UltravoxSession({
+        experimentalMessages: new Set(["debug"]),
+        audioContext: audioContext,
+      });
+      
+      // Add event listener for status updates
+      session.addEventListener('status', (e) => {
+        const newStatus = e.target._status;
+        console.log('Ultravox status:', newStatus);
+        setCallStatus(newStatus === 'active' ? 'active' : newStatus);
+        
+        if (newStatus === 'idle') {
+          setIsMicActive(true);
+        }
+      });
+      
+      // Add event listener for transcripts
+      session.addEventListener('transcripts', (e) => {
+        const transcripts = e.target._transcripts;
+        const formattedTranscripts = transcripts
+          .filter((t) => t && t.speaker)
+          .map((t) => ({
+            text: t.text,
+            speaker: t.speaker === "user" ? "You" : "AI Tutor"
+          }))
+          .map((t) => `${t.speaker}: ${t.text}`);
+        
+        setTranscript(formattedTranscripts);
+      });
+      
+      // Add event listener for agent speaking state
+      session.addEventListener('agent_speaking', (e) => {
+        setIsSpeaking(e.target._isAgentSpeaking);
+      });
+      
+      // Join the call
+      console.log('Joining call with URL:', joinUrl);
+      await session.joinCall(joinUrl);
+      
+      // Save the session reference
+      setUltravoxSession(session);
+      
+      console.log('Call joined successfully');
+      return session;
+    } catch (error) {
+      console.error('Error initializing Ultravox session:', error);
+      throw error;
+    }
   };
 
   // Start WebRTC call with Ultravox AI
@@ -196,6 +267,8 @@ export default function SpeakingPracticePage() {
         selectedTopic,
         nativeLanguage
       );
+
+      console.log("Starting call with voice:", getVoiceForLanguage(languageCode));
 
       // Call our API to create an Ultravox call
       const response = await fetch("/api/learn/speaking/start-call", {
@@ -219,6 +292,7 @@ export default function SpeakingPracticePage() {
       }
 
       const data = await response.json();
+      console.log("Call created successfully:", data);
 
       // Store the joining URL and call ID
       setJoinUrl(data.data.joinUrl);
@@ -235,7 +309,14 @@ export default function SpeakingPracticePage() {
         setCallDuration(durationInSeconds);
       }, 1000);
 
-      setCallStatus("active");
+      // Initialize Ultravox session
+      try {
+        await initializeCall(data.data.joinUrl);
+        setCallStatus("active");
+      } catch (error) {
+        console.error("Error initializing call:", error);
+        throw new Error("Failed to connect to the speaking practice. Please make sure your microphone is enabled and try again.");
+      }
     } catch (error) {
       console.error("Error starting speaking practice:", error);
       setError(error.message || "Failed to start speaking practice");
@@ -274,11 +355,25 @@ Remember that your primary goal is to build the student's confidence in speaking
 First, greet the student in ${languageName} and introduce yourself as their language tutor. Then ask a simple question about the topic to get the conversation started.`;
   };
 
+  // Toggle microphone
+  const toggleMic = () => {
+    if (ultravoxSession) {
+      ultravoxSession.toggleMic();
+      setIsMicActive(!isMicActive);
+    }
+  };
+
   // End the call and save results
   const endSpeakingPractice = async () => {
     try {
       if (durationTimerRef.current) {
         clearInterval(durationTimerRef.current);
+      }
+
+      // End the Ultravox session
+      if (ultravoxSession) {
+        await ultravoxSession.leaveCall();
+        setUltravoxSession(null);
       }
 
       setCallStatus("completed");
@@ -336,58 +431,6 @@ First, greet the student in ${languageName} and introduce yourself as their lang
       );
     }
   };
-
-  // Handle iframe message events
-  useEffect(() => {
-    const handleMessage = (event) => {
-      // Check if the message is from Ultravox
-      if (event.data && event.data.type === "ULTRAVOX_EVENT") {
-        console.log("Ultravox event:", event.data);
-
-        // Handle call ended event
-        if (event.data.event === "CALL_ENDED") {
-          endSpeakingPractice();
-
-          // If there's feedback data in the event, save it
-          if (event.data.feedback) {
-            try {
-              const feedback = JSON.parse(event.data.feedback);
-              setUserFeedback(feedback);
-            } catch (e) {
-              console.error("Error parsing feedback:", e);
-            }
-          }
-        }
-
-        // Handle call started event
-        if (event.data.event === "CALL_STARTED") {
-          setCallStatus("active");
-        }
-
-        // Handle speaking state
-        if (event.data.event === "AGENT_SPEAKING_STARTED") {
-          setIsSpeaking(true);
-        }
-        
-        if (event.data.event === "AGENT_SPEAKING_ENDED") {
-          setIsSpeaking(false);
-        }
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
-  }, [
-    callId,
-    userChallengeId,
-    callDuration,
-    selectedTopic,
-    languageCode,
-    proficiencyLevel,
-  ]);
 
   // Format time for display (MM:SS)
   const formatTime = (seconds) => {
@@ -630,249 +673,318 @@ First, greet the student in ${languageName} and introduce yourself as their lang
           {/* WebRTC section - 2/3 of width on medium+ screens */}
           <div className="md:col-span-2">
             <div className="bg-white shadow-sm rounded-lg overflow-hidden border border-gray-200" ref={webRTCContainerRef}>
-              <div className="relative bg-gray-100">
-                {joinUrl && (
-                  <iframe
-                    ref={iframeRef}
-                    src={joinUrl}
-                    className="w-full h-[500px] border-0"
-                    allow="camera; microphone; clipboard-write"
-                    onLoad={() => setIframeLoaded(true)}
-                  ></iframe>
-                )}
-
-                {!iframeLoaded && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-100">
-                    <LoadingSpinner size="large" />
-                    <p className="mt-4 text-gray-600">
-                      Connecting to your speaking practice session...
-                    </p>
+              <div className="relative bg-gray-50 p-4">
+                <div className="flex justify-between items-center mb-3">
+                  <div className="text-sm text-gray-600">
+                    Status: <span className="font-medium">{callStatus}</span>
                   </div>
-                )}
-              </div>
+                  <button 
+                    onClick={toggleMic} 
+                    className={`p-2 rounded-full ${isMicActive ? 'bg-blue-100 text-blue-600' : 'bg-red-100 text-red-600'}`}
+                  >
+                    {isMicActive ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524l8.367 8.368zm1.414-1.414L6.524 5.11a6 6 0 018.367 8.367zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
+                      </svg>
+                    )}
+                  </button>
+                  </div>
 
-              <div className="p-4 border-t border-gray-200">
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={endSpeakingPractice}
-                  className="cursor-pointer px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg w-full flex items-center justify-center"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
-                  </svg>
-                  End Practice Session
-                </motion.button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
-
-  // Render practice results
-  const renderResults = () => {
-    // Create feedback stats if we have user feedback
-    const feedbackStats = userFeedback
-      ? [
-          {
-            name: "Pronunciation",
-            value: userFeedback.pronunciation,
-            color: "bg-blue-500",
-          },
-          {
-            name: "Fluency",
-            value: userFeedback.fluency,
-            color: "bg-green-500",
-          },
-          {
-            name: "Accuracy",
-            value: userFeedback.accuracy,
-            color: "bg-purple-500",
-          },
-          {
-            name: "Overall",
-            value: userFeedback.overall,
-            color: "bg-amber-500",
-          },
-        ]
-      : [];
-
-    return (
-      <motion.div 
-        className="text-center"
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">
-            Practice Complete!
-          </h1>
-          <p className="text-gray-600 mt-2">
-            You've completed your {getLanguageName(languageCode)} speaking
-            practice.
-          </p>
-        </div>
-
-        <div className="bg-white shadow-sm rounded-lg p-8 border border-gray-200 mb-6">
-          <div className="mb-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">
-              Your Practice Summary
-            </h2>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
-                <p className="text-sm text-amber-800">Practice Duration</p>
-                <p className="text-xl font-bold text-amber-900">
-                  {formatTime(callDuration)}
-                </p>
-              </div>
-
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-                <p className="text-sm text-blue-800">Language</p>
-                <p className="text-xl font-bold text-blue-900">
-                  {getLanguageName(languageCode)}
-                </p>
-              </div>
-
-              <div className="bg-green-50 rounded-lg p-4 border border-green-100">
-                <p className="text-sm text-green-800">Topic</p>
-                <p className="text-xl font-bold text-green-900 truncate">
-                  {selectedTopic}
-                </p>
-              </div>
-
-              <div className="bg-purple-50 rounded-lg p-4 border border-purple-100">
-                <p className="text-sm text-purple-800">Level</p>
-                <p className="text-xl font-bold text-purple-900">
-                  {proficiencyLevel.charAt(0) +
-                    proficiencyLevel.slice(1).toLowerCase()}
-                </p>
-              </div>
-            </div>
-
-            {/* Display user feedback if available */}
-            {userFeedback && (
-              <div className="mt-8">
-                <h3 className="text-md font-bold text-gray-800 mb-4">
-                  Performance Scores
-                </h3>
-
-                <div className="space-y-4">
-                  {feedbackStats.map((stat, index) => (
-                    <div key={index}>
-                      <div className="flex justify-between mb-1">
-                        <span className="text-sm font-medium text-gray-700">
-                          {stat.name}
-                        </span>
-                        <span className="text-sm font-medium text-gray-700">
-                          {stat.value}/100
-                        </span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${stat.value}%` }}
-                          transition={{ duration: 1, delay: index * 0.2 }}
-                          className={`${stat.color} h-2 rounded-full`}
-                        ></motion.div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {userFeedback.suggestions &&
-                  userFeedback.suggestions.length > 0 && (
-                    <div className="mt-6 text-left">
-                      <h3 className="text-md font-bold text-gray-800 mb-2">
-                        Improvement Suggestions
-                      </h3>
-                      <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
-                        {userFeedback.suggestions.map((suggestion, index) => (
-                          <li key={index}>{suggestion}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-col space-y-3">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => {
-                setCallStatus("idle");
-                setCallEnded(false);
-                setJoinUrl(null);
-                setCallId(null);
-                setIframeLoaded(false);
-                setCallDuration(0);
-                setUserFeedback(null);
-              }}
-              className="cursor-pointer px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg font-medium"
-            >
-              Practice Again
-            </motion.button>
-
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => router.push("/dashboard/learn")}
-              className="cursor-pointer px-4 py-3 border border-gray-300 text-gray-700 rounded-lg"
-            >
-              Return to Dashboard
-            </motion.button>
-          </div>
-        </div>
-      </motion.div>
-    );
-  };
-
-  // Render loading state
-  if (isLoading) {
-    return (
-      <DashboardLayout>
-        <div className="container mx-auto py-8 px-4">
-          <div className="flex flex-col justify-center items-center min-h-[400px]">
-            <LoadingSpinner size="large" />
-            <p className="mt-4 text-gray-500">Loading speaking practice...</p>
-          </div>
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  // Render error state
-  if (error) {
-    return (
-      <DashboardLayout>
-        <div className="container mx-auto py-8 px-4">
-          <ErrorMessage
-            title="Failed to load speaking practice"
-            message={error}
-            retry={() => window.location.reload()}
-          />
-        </div>
-      </DashboardLayout>
-    );
-  }
-
-  // Render main content based on current state
-  return (
-    <DashboardLayout>
-      <div className="container mx-auto py-8 px-4">
-        <div className="max-w-6xl mx-auto">
-          <AnimatePresence mode="wait">
-            {callStatus === "idle" && !callEnded && renderTopicSelection()}
-            {["connecting", "active"].includes(callStatus) && renderWebRTCCall()}
-            {callEnded && renderResults()}
-          </AnimatePresence>
-        </div>
+{/* Conversation transcript area */}
+<div className="h-[300px] overflow-y-auto border border-gray-200 rounded-lg p-4 bg-white mb-4">
+  {callStatus === "connecting" ? (
+    <div className="flex flex-col items-center justify-center h-full">
+      <LoadingSpinner size="medium" />
+      <p className="mt-4 text-gray-600">Connecting to your speaking practice...</p>
+      <p className="text-sm text-gray-500 mt-2">Please allow microphone access when prompted</p>
+    </div>
+  ) : transcript.length === 0 ? (
+    <div className="flex flex-col items-center justify-center h-full text-gray-500">
+      <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-gray-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+      </svg>
+      <p>Your conversation will appear here</p>
+      <p className="text-sm mt-1">Speak when the AI tutor asks you a question</p>
+    </div>
+  ) : (
+    transcript.map((line, index) => (
+      <div key={index} className="mb-3">
+        <p className={`py-2 px-3 rounded-lg inline-block max-w-[85%] ${
+          line.startsWith("You") 
+            ? "bg-blue-50 text-blue-800 ml-auto" 
+            : "bg-gray-100 text-gray-800"
+        }`}>
+          {line}
+        </p>
       </div>
-    </DashboardLayout>
-  );
+    ))
+  )}
+</div>
+
+{/* Action buttons */}
+<div className="flex justify-between mt-4">
+  <div className="text-sm text-gray-500">
+    {isMicActive ? (
+      <span className="flex items-center">
+        <span className="relative flex h-3 w-3 mr-2">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+        </span>
+        Microphone active
+      </span>
+    ) : (
+      <span className="flex items-center">
+        <span className="h-3 w-3 rounded-full bg-red-500 mr-2"></span>
+        Microphone muted
+      </span>
+    )}
+  </div>
+
+  <button
+    onClick={endSpeakingPractice}
+    className="flex items-center px-3 py-1 bg-red-500 hover:bg-red-600 text-white rounded-md"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+    </svg>
+    End Call
+  </button>
+</div>
+</div>
+
+<div className="p-4 border-t border-gray-200">
+<h3 className="font-medium text-gray-800 mb-3">Conversation Transcript</h3>
+<div className="text-xs text-gray-500 mb-2">
+  Your conversation will be saved for your learning history
+</div>
+{transcript.length > 0 && (
+  <motion.button
+    whileHover={{ scale: 1.02 }}
+    whileTap={{ scale: 0.98 }}
+    onClick={endSpeakingPractice}
+    className="cursor-pointer px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 text-white rounded-lg w-full flex items-center justify-center mt-2"
+  >
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 001 1h4a1 1 0 001-1V8a1 1 0 00-1-1H8z" clipRule="evenodd" />
+    </svg>
+    End Practice Session
+  </motion.button>
+)}
+</div>
+</div>
+</div>
+</div>
+</motion.div>
+);
+};
+
+// Render practice results
+const renderResults = () => {
+// Create feedback stats if we have user feedback
+const feedbackStats = userFeedback
+? [
+{
+name: "Pronunciation",
+value: userFeedback.pronunciation,
+color: "bg-blue-500",
+},
+{
+name: "Fluency",
+value: userFeedback.fluency,
+color: "bg-green-500",
+},
+{
+name: "Accuracy",
+value: userFeedback.accuracy,
+color: "bg-purple-500",
+},
+{
+name: "Overall",
+value: userFeedback.overall,
+color: "bg-amber-500",
+},
+]
+: [];
+
+return (
+<motion.div 
+className="text-center"
+initial={{ opacity: 0, y: 20 }}
+animate={{ opacity: 1, y: 0 }}
+transition={{ duration: 0.5 }}
+>
+<div className="mb-8">
+<h1 className="text-2xl font-bold text-gray-900">
+Practice Complete!
+</h1>
+<p className="text-gray-600 mt-2">
+You've completed your {getLanguageName(languageCode)} speaking
+practice.
+</p>
+</div>
+
+<div className="bg-white shadow-sm rounded-lg p-8 border border-gray-200 mb-6">
+<div className="mb-6">
+<h2 className="text-lg font-bold text-gray-900 mb-4">
+Your Practice Summary
+</h2>
+
+<div className="grid grid-cols-2 gap-4 mb-6">
+<div className="bg-amber-50 rounded-lg p-4 border border-amber-100">
+<p className="text-sm text-amber-800">Practice Duration</p>
+<p className="text-xl font-bold text-amber-900">
+  {formatTime(callDuration)}
+</p>
+</div>
+
+<div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+<p className="text-sm text-blue-800">Language</p>
+<p className="text-xl font-bold text-blue-900">
+  {getLanguageName(languageCode)}
+</p>
+</div>
+
+<div className="bg-green-50 rounded-lg p-4 border border-green-100">
+<p className="text-sm text-green-800">Topic</p>
+<p className="text-xl font-bold text-green-900 truncate">
+  {selectedTopic}
+</p>
+</div>
+
+<div className="bg-purple-50 rounded-lg p-4 border border-purple-100">
+<p className="text-sm text-purple-800">Level</p>
+<p className="text-xl font-bold text-purple-900">
+  {proficiencyLevel.charAt(0) +
+    proficiencyLevel.slice(1).toLowerCase()}
+</p>
+</div>
+</div>
+
+{/* Display user feedback if available */}
+{userFeedback && (
+<div className="mt-8">
+<h3 className="text-md font-bold text-gray-800 mb-4">
+  Performance Scores
+</h3>
+
+<div className="space-y-4">
+  {feedbackStats.map((stat, index) => (
+    <div key={index}>
+      <div className="flex justify-between mb-1">
+        <span className="text-sm font-medium text-gray-700">
+          {stat.name}
+        </span>
+        <span className="text-sm font-medium text-gray-700">
+          {stat.value}/100
+        </span>
+      </div>
+      <div className="w-full bg-gray-200 rounded-full h-2">
+        <motion.div
+          initial={{ width: 0 }}
+          animate={{ width: `${stat.value}%` }}
+          transition={{ duration: 1, delay: index * 0.2 }}
+          className={`${stat.color} h-2 rounded-full`}
+        ></motion.div>
+      </div>
+    </div>
+  ))}
+</div>
+
+{userFeedback.suggestions &&
+  userFeedback.suggestions.length > 0 && (
+    <div className="mt-6 text-left">
+      <h3 className="text-md font-bold text-gray-800 mb-2">
+        Improvement Suggestions
+      </h3>
+      <ul className="list-disc list-inside space-y-1 text-sm text-gray-700">
+        {userFeedback.suggestions.map((suggestion, index) => (
+          <li key={index}>{suggestion}</li>
+        ))}
+      </ul>
+    </div>
+  )}
+</div>
+)}
+</div>
+
+<div className="flex flex-col space-y-3">
+<motion.button
+whileHover={{ scale: 1.05 }}
+whileTap={{ scale: 0.95 }}
+onClick={() => {
+setCallStatus("idle");
+setCallEnded(false);
+setJoinUrl(null);
+setCallId(null);
+setCallDuration(0);
+setUserFeedback(null);
+setTranscript([]);
+setUltravoxSession(null);
+}}
+className="cursor-pointer px-4 py-3 bg-gradient-to-r from-amber-500 to-amber-600 text-white rounded-lg font-medium"
+>
+Practice Again
+</motion.button>
+
+<motion.button
+whileHover={{ scale: 1.02 }}
+whileTap={{ scale: 0.98 }}
+onClick={() => router.push("/dashboard/learn")}
+className="cursor-pointer px-4 py-3 border border-gray-300 text-gray-700 rounded-lg"
+>
+Return to Dashboard
+</motion.button>
+</div>
+</div>
+</motion.div>
+);
+};
+
+// Render loading state
+if (isLoading) {
+return (
+<DashboardLayout>
+<div className="container mx-auto py-8 px-4">
+<div className="flex flex-col justify-center items-center min-h-[400px]">
+<LoadingSpinner size="large" />
+<p className="mt-4 text-gray-500">Loading speaking practice...</p>
+</div>
+</div>
+</DashboardLayout>
+);
+}
+
+// Render error state
+if (error) {
+return (
+<DashboardLayout>
+<div className="container mx-auto py-8 px-4">
+<ErrorMessage
+title="Failed to load speaking practice"
+message={error}
+retry={() => window.location.reload()}
+/>
+</div>
+</DashboardLayout>
+);
+}
+
+// Render main content based on current state
+return (
+<DashboardLayout>
+<div className="container mx-auto py-8 px-4">
+<div className="max-w-6xl mx-auto">
+<AnimatePresence mode="wait">
+{callStatus === "idle" && !callEnded && renderTopicSelection()}
+{["connecting", "active"].includes(callStatus) && renderWebRTCCall()}
+{callEnded && renderResults()}
+</AnimatePresence>
+</div>
+</div>
+</DashboardLayout>
+);
 }
