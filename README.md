@@ -261,8 +261,7 @@ cd shinobi-contracts
 # Install dependencies
 npm install
 
-# Deploy to test network
-
+```
 
 ## 👥 Our Team
 
@@ -273,6 +272,3 @@ ShinoLearn is built by a passionate team of language educators, AI specialists, 
   <p><em>Meet the minds behind ShinoLearn</em></p>
 </div>
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
