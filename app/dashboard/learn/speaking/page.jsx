@@ -1,17 +1,15 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import ErrorMessage from "@/components/ui/ErrorMessage";
 import { motion, AnimatePresence } from "framer-motion";
-import EnhancedAITutorAvatar from "@/components/learn/EnhancedAITutorAvatar";
 import { Mic, MicOff, Phone, Volume, VolumeX, X } from "lucide-react";
 import { toast } from "sonner";
 
-// Import dialog components - adjust imports according to your UI library
-// If you're using shadcn/ui:
+// Import dialog components
 import {
   Dialog,
   DialogContent,
@@ -19,8 +17,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-
-// If you're using a different UI library, replace with appropriate imports
 
 export default function SpeakingPracticePage() {
   const router = useRouter();
@@ -31,40 +27,30 @@ export default function SpeakingPracticePage() {
   const [proficiencyLevel, setProficiencyLevel] = useState("");
   const [nativeLanguage, setNativeLanguage] = useState("");
   const [userChallengeId, setUserChallengeId] = useState(null);
-  const [callStartTime, setCallStartTime] = useState(null);
   const [callDuration, setCallDuration] = useState(0);
   const [callStatus, setCallStatus] = useState("idle"); // idle, connecting, active, completed, error
   const [selectedTopic, setSelectedTopic] = useState("");
   const [availableTopics, setAvailableTopics] = useState([]);
   const [userFeedback, setUserFeedback] = useState(null);
   const [callEnded, setCallEnded] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [avatarType, setAvatarType] = useState("humanoid");
-  const [transcript, setTranscript] = useState([]);
-  const [isMicActive, setIsMicActive] = useState(true);
-  const [isVolumeActive, setIsVolumeActive] = useState(true);
   const [customTopicValue, setCustomTopicValue] = useState("");
   const [loadingProgress, setLoadingProgress] = useState(0);
   
-  // New dialog-related states
+  // Dialog state
   const [isConversationDialogOpen, setIsConversationDialogOpen] = useState(false);
-  const [conversationSession, setConversationSession] = useState(null);
-  const [audioAnalysis, setAudioAnalysis] = useState(null);
   
+  // Timer ref
   const durationTimerRef = useRef(null);
-  const transcriptEndRef = useRef(null);
-
-  // Scroll to bottom of transcript when new messages arrive
-  useEffect(() => {
-    if (transcriptEndRef.current) {
-      transcriptEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [transcript]);
-
+  
   useEffect(() => {
     // Cleanup function for component unmount
     return () => {
-      // Explicitly clean up all WebGL contexts
+      if (durationTimerRef.current) {
+        clearInterval(durationTimerRef.current);
+      }
+      
+      // Clean up WebGL contexts
       const canvases = document.querySelectorAll('canvas');
       canvases.forEach(canvas => {
         const gl = canvas.getContext('webgl');
@@ -151,22 +137,6 @@ export default function SpeakingPracticePage() {
     }
 
     loadInitialData();
-
-    // Cleanup on component unmount
-    return () => {
-      if (durationTimerRef.current) {
-        clearInterval(durationTimerRef.current);
-      }
-      
-      // End conversation session if active
-      if (conversationSession) {
-        try {
-          conversationSession.leaveCall();
-        } catch (e) {
-          console.error("Error leaving call:", e);
-        }
-      }
-    };
   }, [searchParams, router]);
 
   // Function to generate topic suggestions based on language and level
@@ -394,7 +364,7 @@ Begin by warmly greeting the student in ${languageName}, introducing yourself as
     return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
   };
 
-  // New approach: Start a conversation in a dialog
+  // Start conversation handler
   const startConversation = async () => {
     if (!selectedTopic || !languageCode) {
       toast.error("Please select a conversation topic first");
@@ -409,7 +379,7 @@ Begin by warmly greeting the student in ${languageName}, introducing yourself as
       // Request microphone permission first
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        // We'll use this stream later, so store it on window temporarily
+        // We'll use this stream later, so store it
         window._tempMicrophoneStream = stream;
         setLoadingProgress(30);
       } catch (micError) {
@@ -451,10 +421,10 @@ Begin by warmly greeting the student in ${languageName}, introducing yourself as
       const data = await response.json();
       console.log("Call created successfully:", data);
       
-      // Record start time and setup timer
+      // Record session start time
       const startTime = new Date();
-      setCallStartTime(startTime);
       
+      // Setup timer for call duration
       durationTimerRef.current = setInterval(() => {
         const now = new Date();
         const durationInSeconds = Math.floor((now - startTime) / 1000);
@@ -463,11 +433,11 @@ Begin by warmly greeting the student in ${languageName}, introducing yourself as
       
       setLoadingProgress(70);
       
-      // Open the conversation dialog
+      // Open the conversation dialog with the join URL
       setIsConversationDialogOpen(true);
       
-      // Initialize the conversation in the dialog
-      initializeConversation(data.data.joinUrl);
+      // Store join URL in a window property for the dialog to access
+      window._speakingPracticeJoinUrl = data.data.joinUrl;
       
     } catch (error) {
       console.error("Error starting conversation:", error);
@@ -481,193 +451,6 @@ Begin by warmly greeting the student in ${languageName}, introducing yourself as
       }
       
       toast.error("Failed to start speaking practice. Please try again.");
-    }
-  };
-
-  // Initialize the conversation inside the dialog
-  const initializeConversation = async (joinUrl) => {
-    if (!joinUrl) {
-      console.error("No join URL provided");
-      return;
-    }
-    
-    try {
-      // Import Ultravox dynamically
-      const { UltravoxSession } = await import('ultravox-client');
-      
-      // Create an audio context
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-      if (audioContext.state === 'suspended') {
-        await audioContext.resume();
-      }
-      
-      // Create a new Ultravox session
-      const session = new UltravoxSession({
-        experimentalMessages: new Set(["debug", "audio_analysis"]),
-        audioContext: audioContext,
-        mediaStream: window._tempMicrophoneStream // Use the stream we already have permission for
-      });
-      
-      // Set up event listeners
-      session.addEventListener('status', (e) => {
-        const status = e.target._status;
-        console.log("Ultravox status:", status);
-        
-        setCallStatus(status === 'active' ? 'active' : status);
-        
-        if (status === 'idle') {
-          setIsMicActive(true);
-        }
-      });
-      
-      session.addEventListener('transcripts', (e) => {
-        const transcripts = e.target._transcripts;
-        if (!transcripts) return;
-        
-        const formattedTranscripts = transcripts
-          .filter((t) => t && t.speaker)
-          .map((t) => ({
-            text: t.text,
-            speaker: t.speaker === "user" ? "You" : "AI Tutor",
-            timestamp: new Date().toISOString(),
-            id: Math.random().toString(36).substring(2, 9)
-          }));
-        
-        setTranscript(formattedTranscripts);
-      });
-      
-      session.addEventListener('agent_speaking', (e) => {
-        setIsSpeaking(!!e.target._isAgentSpeaking);
-      });
-      
-      session.addEventListener('audio_analysis', (e) => {
-        if (e.target._audioAnalysis) {
-          setAudioAnalysis({
-            volume: e.target._audioAnalysis.volumeLevel || 0,
-            pitch: e.target._audioAnalysis.pitch || 0,
-            frequencies: e.target._audioAnalysis.frequencies || []
-          });
-        }
-      });
-      
-      // Join the call
-      await session.joinCall(joinUrl);
-      
-      // Store the session
-      setConversationSession(session);
-      
-      // We don't need to keep the reference anymore
-      window._tempMicrophoneStream = null;
-      
-      setLoadingProgress(100);
-      
-    } catch (error) {
-      console.error("Error initializing conversation:", error);
-      
-      // Clean up resources
-      if (window._tempMicrophoneStream) {
-        window._tempMicrophoneStream.getTracks().forEach(track => track.stop());
-        window._tempMicrophoneStream = null;
-      }
-      
-      setCallStatus("error");
-      setError(error.message || "Failed to connect to speaking practice");
-      setIsConversationDialogOpen(false);
-      
-      toast.error("Failed to connect to speaking practice. Please try again.");
-    }
-  };
-
-  // Toggle microphone
-  const toggleMic = () => {
-    if (conversationSession) {
-      conversationSession.toggleMic();
-      setIsMicActive(!isMicActive);
-    }
-  };
-
-  // Toggle speaker
-  const toggleVolume = () => {
-    if (conversationSession) {
-      conversationSession.toggleSpeaker();
-      setIsVolumeActive(!isVolumeActive);
-    }
-  };
-
-  // End the conversation
-  const endConversation = async () => {
-    try {
-      // Stop the timer
-      if (durationTimerRef.current) {
-        clearInterval(durationTimerRef.current);
-      }
-      
-      // Leave the call
-      if (conversationSession) {
-        await conversationSession.leaveCall();
-        setConversationSession(null);
-      }
-      
-      // Close the dialog
-      setIsConversationDialogOpen(false);
-      
-      // Generate feedback
-      const mockFeedback = generateMockFeedback();
-      setUserFeedback(mockFeedback);
-      
-      // Update status
-      setCallStatus("completed");
-      setCallEnded(true);
-      
-      // If there's a challenge ID, update progress
-      if (userChallengeId) {
-        // Calculate practice minutes (rounded up)
-        const practiceMinutes = Math.ceil(callDuration / 60);
-
-        try {
-          await fetch("/api/challenges/update-progress", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              userChallengeId,
-              minutes: practiceMinutes,
-              isSessionEnd: true,
-              activityType: "SPEAKING",
-            }),
-          });
-        } catch (progressError) {
-          console.error("Error updating challenge progress:", progressError);
-        }
-      }
-      
-      // Save practice session details
-      try {
-        await fetch("/api/learn/speaking/save-result", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            languageCode,
-            proficiencyLevel,
-            pronunciationScore: mockFeedback.pronunciation,
-            fluencyScore: mockFeedback.fluency,
-            accuracyScore: mockFeedback.accuracy,
-            overallScore: mockFeedback.overall,
-            prompt: selectedTopic,
-            userChallengeId: userChallengeId || null,
-            durationSeconds: callDuration,
-          }),
-        });
-      } catch (saveError) {
-        console.error("Error saving speaking practice results:", saveError);
-      }
-      
-    } catch (error) {
-      console.error("Error ending conversation:", error);
-      toast.error("Error ending conversation. Your results may not be saved properly.");
     }
   };
 
@@ -746,325 +529,81 @@ Begin by warmly greeting the student in ${languageName}, introducing yourself as
     setCallEnded(false);
     setCallDuration(0);
     setUserFeedback(null);
-    setTranscript([]);
-    setConversationSession(null);
     setSelectedTopic("");
     setCustomTopicValue("");
   };
 
-// Enhanced Conversation Dialog Component with improved UI
-const ConversationDialog = () => {
-
-
-  const dialogContent = useMemo(() => (
-    <DialogContent className="max-w-5xl h-[85vh] flex flex-col overflow-hidden p-0 gap-0 rounded-xl bg-gradient-to-b from-gray-50 to-white">
-    {/* Header with better visual treatment */}
-    <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white px-6 py-4 rounded-t-xl">
-      <DialogTitle className="text-xl font-bold tracking-tight m-0">
-        Speaking Practice: {selectedTopic}
-      </DialogTitle>
-      <DialogDescription className="text-amber-50 m-0 opacity-90 mt-1 flex items-center">
-        <span className="mr-3">Conversation in {getLanguageName(languageCode)}</span>
-        
-      </DialogDescription>
-    </div>
-    
-    <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-7 gap-4 p-5">
-      {/* Avatar section - Now with 3/7 columns */}
-      <div className="md:col-span-3 flex flex-col border rounded-xl overflow-hidden shadow-sm bg-white">
-        <div className="p-4 bg-gray-50 border-b flex items-center justify-between">
-          <h3 className="font-medium text-gray-800 flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
-            </svg>
-            AI Language Tutor
-          </h3>
-          <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-            isSpeaking 
-              ? 'bg-green-100 text-green-800' 
-              : 'bg-blue-100 text-blue-800'
-          }`}>
-            {isSpeaking ? "Speaking" : "Listening"}
-          </div>
-        </div>
-        
-        <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4 bg-gradient-to-b from-white to-gray-50">
-          <div className="relative">
-            {/* <EnhancedAITutorAvatar 
-              isActive={true}
-              isSpeaking={isSpeaking}
-              languageCode={languageCode}
-              avatarType={avatarType}
-              audioAnalysis={audioAnalysis}
-              className="h-52 w-52"
-            /> */}
-            
-            {/* Visual indicator for speaking state */}
-            {isSpeaking && (
-              <div className="absolute bottom-3 right-3 bg-white rounded-full p-1 shadow-md">
-                <div className="bg-green-500 rounded-full p-1">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clipRule="evenodd" />
-                  </svg>
-                </div>
-              </div>
-            )}
-          </div>
-          
-          {/* Audio visualization */}
-          <div className="w-full bg-white rounded-lg p-4 border shadow-sm">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-xs font-medium text-gray-500">Audio Level</h4>
-              <span className="text-xs text-gray-400">{audioAnalysis?.volume ? Math.round(audioAnalysis.volume * 100) : 0}%</span>
-            </div>
-            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-              <div 
-                className={`h-full ${isSpeaking ? 'bg-green-500' : 'bg-blue-500'} rounded-full transition-all duration-150`}
-                style={{ width: `${audioAnalysis?.volume ? Math.max(audioAnalysis.volume * 100, 3) : 3}%` }}
-              ></div>
-            </div>
-            
-            {/* Audio waveform visualization */}
-            <div className="mt-3 flex items-end justify-center h-10 gap-0.5">
-              {Array.from({ length: 15 }, (_, i) => {
-                // Generate random heights for wave animation
-                const height = audioAnalysis?.volume 
-                  ? Math.max(10, Math.min(40, audioAnalysis.volume * 100 * Math.sin(i/2 + Date.now()/500) + 20))
-                  : Math.random() * 5 + 2;
-                
-                return (
-                  <div 
-                    key={i} 
-                    className={`w-1.5 rounded-full ${isSpeaking ? 'bg-green-500' : 'bg-blue-400'} opacity-80`}
-                    style={{ 
-                      height: `${height}px`,
-                      animationDelay: `${i * 0.1}s`
-                    }}
-                  ></div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-        
-        <div className="p-4 border-t bg-white flex justify-center gap-3">
-          <button
-            onClick={toggleMic}
-            className={`flex items-center justify-center h-11 w-11 rounded-full transition-all ${
-              isMicActive 
-                ? 'bg-blue-500 text-white hover:bg-blue-600 ring-4 ring-blue-100' 
-                : 'bg-red-500 text-white hover:bg-red-600 ring-4 ring-red-100'
-            }`}
-            title={isMicActive ? "Mute microphone" : "Unmute microphone"}
-          >
-            {isMicActive ? <Mic size={18} /> : <MicOff size={18} />}
-          </button>
-          
-          <button
-            onClick={toggleVolume}
-            className={`flex items-center justify-center h-11 w-11 rounded-full transition-all ${
-              isVolumeActive 
-                ? 'bg-blue-500 text-white hover:bg-blue-600 ring-4 ring-blue-100' 
-                : 'bg-gray-500 text-white hover:bg-gray-600 ring-4 ring-gray-100'
-            }`}
-            title={isVolumeActive ? "Mute speaker" : "Unmute speaker"}
-          >
-            {isVolumeActive ? <Volume size={18} /> : <VolumeX size={18} />}
-          </button>
-          
-          <button
-            onClick={() => {
-              if (confirm("Are you sure you want to end this practice session?")) {
-                endConversation();
-              }
-            }}
-            className="flex items-center justify-center h-11 w-11 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors ring-4 ring-red-100"
-            title="End conversation"
-          >
-            <Phone size={18} />
-          </button>
-        </div>
-      </div>
+  // Handle end of conversation from the dialog
+  const handleConversationEnd = async (sessionData) => {
+    try {
+      // Stop the timer
+      if (durationTimerRef.current) {
+        clearInterval(durationTimerRef.current);
+      }
       
-      {/* Conversation area - Now with 4/7 columns */}
-      <div className="md:col-span-4 flex flex-col border rounded-xl overflow-hidden shadow-sm bg-white">
-        <div className="p-4 bg-gray-50 border-b flex items-center justify-between">
-          <h3 className="font-medium text-gray-800 flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
-              <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
-              <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
-            </svg>
-            Conversation
-          </h3>
-          <div className="flex items-center gap-2">
-            {callStatus === "connecting" && (
-              <div className="flex items-center text-amber-700 bg-amber-50 px-2 py-1 rounded-full text-xs font-medium">
-                <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse mr-1.5"></div>
-                Connecting...
-              </div>
-            )}
-            {callStatus === "active" && (
-              <div className="flex items-center text-green-700 bg-green-50 px-2 py-1 rounded-full text-xs font-medium">
-                <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse mr-1.5"></div>
-                Connected
-              </div>
-            )}
-          </div>
-        </div>
-        
-        <div className="flex-1 p-5 overflow-y-auto bg-white" style={{ backgroundImage: "url('data:image/svg+xml,%3Csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"%3E%3Cpath fill=\"%23f9fafb\" d=\"M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z\"%3E%3C/path%3E%3C/svg%3E'), linear-gradient(to bottom, #ffffff, #fafafa)" }}>
-          {callStatus === "connecting" ? (
-            <div className="flex flex-col items-center justify-center h-full">
-              <div className="w-16 h-16 border-4 border-t-amber-500 border-amber-200 rounded-full animate-spin mb-4"></div>
-              <h3 className="text-lg font-medium text-gray-700 mb-1">Establishing Connection</h3>
-              <p className="text-gray-500 text-center max-w-sm">
-                Setting up your conversation with the AI language tutor. 
-                This may take a few moments...
-              </p>
-              <div className="w-64 bg-gray-200 h-1.5 mt-6 rounded-full overflow-hidden">
-                <div className="h-full bg-amber-500 rounded-full animate-pulse" style={{ width: `${loadingProgress}%` }}></div>
-              </div>
-            </div>
-          ) : transcript.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full">
-              <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-4">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-                </svg>
-              </div>
-              <h3 className="text-lg font-medium text-gray-700 mb-1">Ready to Begin</h3>
-              <p className="text-gray-500 text-center max-w-sm">
-                Your AI tutor will greet you momentarily. Make sure your microphone is enabled 
-                and speak clearly when responding.
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4 px-2">
-              {/* Date separator */}
-              <div className="flex justify-center my-4">
-                <div className="px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-500">
-                  Today, {new Date().toLocaleDateString()}
-                </div>
-              </div>
-              
-              {transcript.map((item, index) => (
-                <div key={item.id} className={`flex ${item.speaker === "You" ? "justify-end" : "justify-start"} group`}>
-                  {/* AI Tutor avatar for messages */}
-                  {item.speaker !== "You" && (
-                    <div className="w-8 h-8 rounded-full bg-amber-100 flex-shrink-0 flex items-center justify-center mr-2 mt-1 overflow-hidden border border-amber-200">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-600" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  )}
-                  
-                  <div className={`max-w-[75%] py-3 px-4 rounded-2xl shadow-sm ${
-                    item.speaker === "You" 
-                      ? "bg-blue-500 text-white" 
-                      : "bg-white border border-gray-100"
-                  } relative group-hover:shadow-md transition-shadow`}>
-                    {/* Subtle timestamp that appears on hover */}
-                    <div className={`text-[10px] ${item.speaker === "You" ? "text-blue-100" : "text-gray-400"} absolute -top-5 ${item.speaker === "You" ? "right-1" : "left-1"} opacity-0 group-hover:opacity-100 transition-opacity`}>
-                      {new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                    </div>
-                    
-                    <div className={`text-xs font-medium mb-1 ${item.speaker === "You" ? "text-blue-100" : "text-gray-500"}`}>
-                      {item.speaker}
-                    </div>
-                    <div className={`text-sm ${item.speaker === "You" ? "text-white" : "text-gray-800"}`}>
-                      {item.text}
-                    </div>
-                  </div>
-                  
-                  {/* User avatar for messages */}
-                  {item.speaker === "You" && (
-                    <div className="w-8 h-8 rounded-full bg-blue-100 flex-shrink-0 flex items-center justify-center ml-2 mt-1 overflow-hidden border border-blue-200">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                  )}
-                </div>
-              ))}
-              <div ref={transcriptEndRef} />
-            </div>
-          )}
-        </div>
-        
-        <div className="p-3 border-t bg-white text-sm flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {isMicActive ? (
-              <div className="flex items-center text-green-700">
-                <span className="relative flex h-3 w-3 mr-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
-                </span>
-                Microphone active
-              </div>
-            ) : (
-              <div className="flex items-center text-red-600">
-                <span className="h-3 w-3 bg-red-500 rounded-full mr-2"></span>
-                Microphone muted
-              </div>
-            )}
-            
-            <div className="w-px h-5 bg-gray-200 mx-1"></div>
-            
-            <div className="flex items-center text-gray-600">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-              </svg>
-              {transcript.length} messages
-            </div>
-          </div>
-          
-          <div className="text-xs px-2 py-1 bg-amber-50 text-amber-800 rounded-full">
-            Topic: {selectedTopic.length > 20 ? selectedTopic.substring(0, 20) + "..." : selectedTopic}
-          </div>
-        </div>
-      </div>
-    </div>
-    
-    <div className="mt-1 bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-b-xl text-xs text-blue-700 border-t border-blue-200">
-      <h4 className="font-semibold mb-2 flex items-center">
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-          <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-        </svg>
-        Speaking Tips:
-      </h4>
-      <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-        <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-          <span>Speak clearly at a comfortable pace</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-          <span>Don't worry about small mistakes</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-          <span>Try to respond in complete sentences</span>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
-          <span>Ask questions to keep conversation going</span>
-        </div>
-      </div>
-    </div>
-  </DialogContent>
-  ), [
-    // Only add dependencies that should cause a remount
-   ]);
-  return (
-    <Dialog 
-    open={isConversationDialogOpen} 
+      // Close the dialog
+      setIsConversationDialogOpen(false);
+      
+      // Generate feedback
+      const mockFeedback = generateMockFeedback();
+      setUserFeedback(mockFeedback);
+      
+      // Update status
+      setCallStatus("completed");
+      setCallEnded(true);
+      
+      // If there's a challenge ID, update progress
+      if (userChallengeId) {
+        // Calculate practice minutes (rounded up)
+        const practiceMinutes = Math.ceil(callDuration / 60);
 
-  >
-    {dialogContent}
-  </Dialog>
-  );
-};
+        try {
+          await fetch("/api/challenges/update-progress", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              userChallengeId,
+              minutes: practiceMinutes,
+              isSessionEnd: true,
+              activityType: "SPEAKING",
+            }),
+          });
+        } catch (progressError) {
+          console.error("Error updating challenge progress:", progressError);
+        }
+      }
+      
+      // Save practice session details
+      try {
+        await fetch("/api/learn/speaking/save-result", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            languageCode,
+            proficiencyLevel,
+            pronunciationScore: mockFeedback.pronunciation,
+            fluencyScore: mockFeedback.fluency,
+            accuracyScore: mockFeedback.accuracy,
+            overallScore: mockFeedback.overall,
+            prompt: selectedTopic,
+            userChallengeId: userChallengeId || null,
+            durationSeconds: callDuration,
+            transcript: sessionData?.transcript || [],
+          }),
+        });
+      } catch (saveError) {
+        console.error("Error saving speaking practice results:", saveError);
+      }
+      
+    } catch (error) {
+      console.error("Error ending conversation:", error);
+      toast.error("Error ending conversation. Your results may not be saved properly.");
+    }
+  };
 
   // Render topic selection screen
   const renderTopicSelection = () => {
@@ -1090,14 +629,6 @@ const ConversationDialog = () => {
               <h2 className="text-xl font-semibold text-gray-800 mb-6">Your AI Tutor</h2>
               
               <div className="mb-6">
-                {/* <EnhancedAITutorAvatar 
-                  isActive={true}
-                  isSpeaking={false}
-                  languageCode={languageCode}
-                  avatarType={avatarType}
-                  className="mb-4"
-                />
-                 */}
                 <div className="flex justify-center gap-4 mt-6">
                   {["humanoid", "robot", "animal"].map((type) => (
                     <motion.div 
@@ -1376,15 +907,6 @@ const ConversationDialog = () => {
                 </div>
               </div>
               
-              <div className="mt-6">
-                {/* <EnhancedAITutorAvatar 
-                  isActive={true}
-                  isSpeaking={false}
-                  languageCode={languageCode}
-                  avatarType={avatarType}
-                /> */}
-              </div>
-              
               <div className="mt-6 pt-6 border-t border-gray-200">
                 <div className="flex justify-between gap-3">
                   <motion.button
@@ -1505,88 +1027,6 @@ const ConversationDialog = () => {
                   </ul>
                 </div>
               </div>
-              
-              {/* Conversation transcript summary */}
-              <div className="mt-8 pt-6 border-t border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M18 5v8a2 2 0 01-2 2h-5l-5 4v-4H4a2 2 0 01-2-2V5a2 2 0 012-2h12a2 2 0 012 2zM7 8H5v2h2V8zm2 0h2v2H9V8zm6 0h-2v2h2V8z" clipRule="evenodd" />
-                  </svg>
-                  Conversation Summary
-                </h3>
-                
-                <div className="bg-gray-50 rounded-xl p-4 max-h-[300px] overflow-y-auto">
-                  {transcript.length > 0 ? (
-                    <div className="space-y-3">
-                      {transcript.map((item, index) => (
-                        <div key={index} className="flex gap-2 text-sm">
-                          <div className="font-semibold min-w-[80px] text-gray-600">
-                            {item.speaker}:
-                          </div>
-                          <div className="text-gray-800 flex-1">{item.text}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-500 py-4">
-                      No conversation transcript available
-                    </div>
-                  )}
-                </div>
-                
-                <div className="mt-6 flex justify-end">
-                  <button 
-                    className="px-4 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg font-medium flex items-center"
-                    onClick={() => {
-                      // In a real app, this would download or export the transcript
-                      toast('Transcript saved successfully!', {
-                        position: 'bottom-right',
-                        duration: 3000
-                      });
-                    }}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                      <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
-                    </svg>
-                    Save Transcript
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-6 bg-blue-50 border border-blue-200 rounded-xl p-5 text-blue-800">
-              <h3 className="font-semibold mb-3 flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zM8 16v-1h4v1a2 2 0 11-4 0zM12 14c.015-.34.208-.646.477-.859a4 4 0 10-4.954 0c.27.213.462.519.476.859h4.002z" />
-                </svg>
-                Tips for Continued Improvement
-              </h3>
-              <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                <li className="flex items-start gap-2">
-                  <div className="min-w-[1rem] h-4 flex items-center justify-center mt-0.5">•</div>
-                  <span>Practice regularly, even for short 5-10 minute sessions</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="min-w-[1rem] h-4 flex items-center justify-center mt-0.5">•</div>
-                  <span>Listen to {getLanguageName(languageCode)} music, podcasts, or videos</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="min-w-[1rem] h-4 flex items-center justify-center mt-0.5">•</div>
-                  <span>Use language learning apps for vocabulary building</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="min-w-[1rem] h-4 flex items-center justify-center mt-0.5">•</div>
-                  <span>Record yourself speaking and listen back to identify areas for improvement</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="min-w-[1rem] h-4 flex items-center justify-center mt-0.5">•</div>
-                  <span>Try to think in {getLanguageName(languageCode)} during everyday activities</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <div className="min-w-[1rem] h-4 flex items-center justify-center mt-0.5">•</div>
-                  <span>Schedule your next speaking practice session soon</span>
-                </li>
-              </ul>
             </div>
           </div>
         </div>
@@ -1664,7 +1104,6 @@ const ConversationDialog = () => {
     );
   }
 
-  // Main render
   return (
     <DashboardLayout>
       <div className="container mx-auto p-6">
@@ -1673,9 +1112,527 @@ const ConversationDialog = () => {
           {callEnded && renderResults()}
         </AnimatePresence>
         
-        {/* Conversation Dialog */}
-        <ConversationDialog />
+        {/* Conversation Dialog - Using the simpler approach like WebCallDialog */}
+        <SpeakingPracticeDialog
+          isOpen={isConversationDialogOpen}
+          onClose={() => setIsConversationDialogOpen(false)}
+          onEnd={handleConversationEnd}
+          languageCode={languageCode}
+          selectedTopic={selectedTopic}
+          avatarType={avatarType}
+        />
       </div>
     </DashboardLayout>
+  );
+}
+
+// Separate the dialog component completely to avoid unnecessary re-renders
+function SpeakingPracticeDialog({ 
+  isOpen, 
+  onClose, 
+  onEnd, 
+  languageCode,
+  selectedTopic,
+  avatarType
+}) {
+  const [status, setStatus] = useState("connecting");
+  const [transcript, setTranscript] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [session, setSession] = useState(null);
+  const [isMicActive, setIsMicActive] = useState(true);
+  const [isVolumeActive, setIsVolumeActive] = useState(true);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [audioAnalysis, setAudioAnalysis] = useState({ volume: 0 });
+  
+  const transcriptEndRef = useRef(null);
+
+  // Scroll to bottom of transcript when new messages arrive
+  useEffect(() => {
+    if (transcriptEndRef.current) {
+      transcriptEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [transcript]);
+
+  // Initialize the conversation when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      initializeConversation();
+    }
+    
+    // Cleanup when dialog closes
+    return () => {
+      if (session) {
+        try {
+          session.leaveCall();
+        } catch (e) {
+          console.error("Error leaving call:", e);
+        }
+      }
+    };
+  }, [isOpen]);
+
+  // Initialize the conversation with Ultravox
+  const initializeConversation = async () => {
+    if (!window._speakingPracticeJoinUrl) {
+      console.error("No join URL provided");
+      onClose();
+      return;
+    }
+    
+    try {
+      setStatus("connecting");
+      setTranscript([]);
+      setIsLoading(true);
+      
+      // Import Ultravox dynamically
+      const { UltravoxSession } = await import('ultravox-client');
+      
+      // Create an audio context
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+      
+      // Create a new Ultravox session
+      const uvSession = new UltravoxSession({
+        experimentalMessages: new Set(["debug", "audio_analysis"]),
+        audioContext: audioContext,
+        mediaStream: window._tempMicrophoneStream // Use the stream we already have permission for
+      });
+      
+      // Set up event listeners
+      uvSession.addEventListener('status', (e) => {
+        const newStatus = e.target._status;
+        console.log("Ultravox status:", newStatus);
+        setStatus(newStatus);
+        
+        if (newStatus === 'active') {
+          setIsLoading(false);
+        }
+      });
+      
+      // Handle transcripts - more efficient approach
+      uvSession.addEventListener('transcripts', (e) => {
+        const newTranscripts = e.target._transcripts;
+        if (!newTranscripts || !newTranscripts.length) return;
+        
+        // Process only if the transcript content has changed
+        setTranscript(
+          newTranscripts
+            .filter((t) => t && t.speaker)
+            .map((t) => ({
+              text: t.text,
+              speaker: t.speaker === "user" ? "You" : "AI Tutor",
+              timestamp: new Date().toISOString(),
+              id: `${t.speaker}-${t.text.substring(0, 10)}-${Math.random().toString(36).substring(2, 7)}`
+            }))
+        );
+      });
+      
+      // Handle speaking state with debounce
+      let speakingDebounceTimer;
+      uvSession.addEventListener('agent_speaking', (e) => {
+        clearTimeout(speakingDebounceTimer);
+        speakingDebounceTimer = setTimeout(() => {
+          setIsSpeaking(!!e.target._isAgentSpeaking);
+        }, 300); // Longer debounce time to prevent flicker
+      });
+      
+      // Handle audio analysis with throttling
+      let lastAudioUpdate = 0;
+      uvSession.addEventListener('audio_analysis', (e) => {
+        const now = Date.now();
+        if (now - lastAudioUpdate > 500 && e.target._audioAnalysis) { // Update max every 500ms
+          const newVolume = e.target._audioAnalysis.volumeLevel || 0;
+          setAudioAnalysis({
+            volume: newVolume,
+            pitch: e.target._audioAnalysis.pitch || 0,
+            frequencies: e.target._audioAnalysis.frequencies || []
+          });
+          lastAudioUpdate = now;
+        }
+      });
+      
+      // Join the call
+      await uvSession.joinCall(window._speakingPracticeJoinUrl);
+      setSession(uvSession);
+      
+      // Clear temporary microphone stream reference
+      window._tempMicrophoneStream = null;
+      
+    } catch (error) {
+      console.error("Error initializing conversation:", error);
+      
+      // Clean up resources
+      if (window._tempMicrophoneStream) {
+        window._tempMicrophoneStream.getTracks().forEach(track => track.stop());
+        window._tempMicrophoneStream = null;
+      }
+      
+      setStatus("error");
+      toast.error("Failed to connect to speaking practice. Please try again.");
+      onClose();
+    }
+  };
+
+  // Toggle microphone
+  const toggleMic = () => {
+    if (session) {
+      session.toggleMic();
+      setIsMicActive(!isMicActive);
+    }
+  };
+
+  // Toggle speaker
+  const toggleVolume = () => {
+    if (session) {
+      session.toggleSpeaker();
+      setIsVolumeActive(!isVolumeActive);
+    }
+  };
+
+  // End the conversation
+  const endConversation = async () => {
+    try {
+      if (session) {
+        await session.leaveCall();
+        setSession(null);
+      }
+      
+      // Pass session data back to parent component
+      onEnd({ transcript });
+      
+    } catch (error) {
+      console.error("Error ending conversation:", error);
+      toast.error("Error ending conversation.");
+      onClose();
+    }
+  };
+
+  // Format language name
+  const getLanguageName = (code) => {
+    const languages = {
+      en: "English",
+      es: "Spanish",
+      fr: "French",
+      de: "German",
+      it: "Italian",
+      ja: "Japanese",
+      ko: "Korean",
+      zh: "Chinese",
+      ru: "Russian",
+      pt: "Portuguese",
+      ar: "Arabic",
+      hi: "Hindi",
+    };
+
+    return languages[code] || code;
+  };
+
+  return (
+    <Dialog 
+      open={isOpen} 
+      onOpenChange={(open) => {
+        if (!open && session) {
+          // Handle dialog closing gracefully
+          endConversation();
+        }
+      }}
+    >
+      <DialogContent className="max-w-5xl h-[85vh] flex flex-col overflow-hidden p-0 gap-0 rounded-xl bg-gradient-to-b from-gray-50 to-white">
+        {/* Header with better visual treatment */}
+        <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-white px-6 py-4 rounded-t-xl">
+          <DialogTitle className="text-xl font-bold tracking-tight m-0">
+            Speaking Practice: {selectedTopic}
+          </DialogTitle>
+          <DialogDescription className="text-amber-50 m-0 opacity-90 mt-1 flex items-center">
+            <span className="mr-3">Conversation in {getLanguageName(languageCode)}</span>
+          </DialogDescription>
+        </div>
+        
+        <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-7 gap-4 p-5">
+          {/* Avatar section - Now with 3/7 columns */}
+          <div className="md:col-span-3 flex flex-col border rounded-xl overflow-hidden shadow-sm bg-white">
+            <div className="p-4 bg-gray-50 border-b flex items-center justify-between">
+              <h3 className="font-medium text-gray-800 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+                </svg>
+                AI Language Tutor
+              </h3>
+              <div className={`px-2 py-1 rounded-full text-xs font-medium ${
+                isSpeaking 
+                  ? 'bg-green-100 text-green-800' 
+                  : 'bg-blue-100 text-blue-800'
+              }`}>
+                {isSpeaking ? "Speaking" : "Listening"}
+              </div>
+            </div>
+            
+            <div className="flex-1 flex flex-col items-center justify-center p-6 gap-4 bg-gradient-to-b from-white to-gray-50">
+              <div className="relative">
+                {/* Avatar placeholder - replace with actual avatar component */}
+                <div className="h-52 w-52 rounded-full bg-amber-100 flex items-center justify-center overflow-hidden border-4 border-amber-200">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-32 w-32 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                  </svg>
+                </div>
+                
+                {/* Visual indicator for speaking state */}
+                {isSpeaking && (
+                  <div className="absolute bottom-3 right-3 bg-white rounded-full p-1 shadow-md">
+                    <div className="bg-green-500 rounded-full p-1">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-white" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.984 5.984 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.983 3.983 0 00-1.172-2.828 1 1 0 010-1.415z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                  </div>
+                )}
+              </div>
+              
+              {/* Audio visualization */}
+              <div className="w-full bg-white rounded-lg p-4 border shadow-sm">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-medium text-gray-500">Audio Level</h4>
+                  <span className="text-xs text-gray-400">{audioAnalysis?.volume ? Math.round(audioAnalysis.volume * 100) : 0}%</span>
+                </div>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full ${isSpeaking ? 'bg-green-500' : 'bg-blue-500'} rounded-full transition-all duration-150`}
+                    style={{ width: `${audioAnalysis?.volume ? Math.max(audioAnalysis.volume * 100, 3) : 3}%` }}
+                  ></div>
+                </div>
+                
+                {/* Audio waveform visualization - with stable keys based on index */}
+                <div className="mt-3 flex items-end justify-center h-10 gap-0.5">
+                  {Array.from({ length: 15 }, (_, i) => {
+                    // Generate deterministic heights based on index and speaking state
+                    const height = isSpeaking
+                      ? 5 + Math.abs(Math.sin((i / 2) + (Date.now() / 1000) % 10) * 30)
+                      : 5 + Math.abs(Math.sin((i / 3) + (Date.now() / 2000) % 5) * 10);
+                    
+                    return (
+                      <div 
+                        key={`wave-${i}`} 
+                        className={`w-1.5 rounded-full ${isSpeaking ? 'bg-green-500' : 'bg-blue-400'} opacity-80`}
+                        style={{ 
+                          height: `${height}px`
+                        }}
+                      ></div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t bg-white flex justify-center gap-3">
+              <button
+                onClick={toggleMic}
+                className={`flex items-center justify-center h-11 w-11 rounded-full transition-all ${
+                  isMicActive 
+                    ? 'bg-blue-500 text-white hover:bg-blue-600 ring-4 ring-blue-100' 
+                    : 'bg-red-500 text-white hover:bg-red-600 ring-4 ring-red-100'
+                }`}
+                title={isMicActive ? "Mute microphone" : "Unmute microphone"}
+              >
+                {isMicActive ? <Mic size={18} /> : <MicOff size={18} />}
+              </button>
+              
+              <button
+                onClick={toggleVolume}
+                className={`flex items-center justify-center h-11 w-11 rounded-full transition-all ${
+                  isVolumeActive 
+                    ? 'bg-blue-500 text-white hover:bg-blue-600 ring-4 ring-blue-100' 
+                    : 'bg-gray-500 text-white hover:bg-gray-600 ring-4 ring-gray-100'
+                }`}
+                title={isVolumeActive ? "Mute speaker" : "Unmute speaker"}
+              >
+                {isVolumeActive ? <Volume size={18} /> : <VolumeX size={18} />}
+              </button>
+              
+              <button
+                onClick={() => {
+                  if (confirm("Are you sure you want to end this practice session?")) {
+                    endConversation();
+                  }
+                }}
+                className="flex items-center justify-center h-11 w-11 rounded-full bg-red-500 text-white hover:bg-red-600 transition-colors ring-4 ring-red-100"
+                title="End conversation"
+              >
+                <Phone size={18} />
+              </button>
+            </div>
+          </div>
+          
+          {/* Conversation area - Now with 4/7 columns */}
+          <div className="md:col-span-4 flex flex-col border rounded-xl overflow-hidden shadow-sm bg-white">
+            <div className="p-4 bg-gray-50 border-b flex items-center justify-between">
+              <h3 className="font-medium text-gray-800 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
+                  <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
+                </svg>
+                Conversation
+              </h3>
+              <div className="flex items-center gap-2">
+                {status === "connecting" && (
+                  <div className="flex items-center text-amber-700 bg-amber-50 px-2 py-1 rounded-full text-xs font-medium">
+                    <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse mr-1.5"></div>
+                    Connecting...
+                  </div>
+                )}
+                {status === "active" && (
+                  <div className="flex items-center text-green-700 bg-green-50 px-2 py-1 rounded-full text-xs font-medium">
+                    <div className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse mr-1.5"></div>
+                    Connected
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div 
+              className="flex-1 p-5 overflow-y-auto bg-white" 
+              style={{ 
+                backgroundImage: "url('data:image/svg+xml,%3Csvg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"%3E%3Cpath fill=\"%23f9fafb\" d=\"M11 18c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm48 25c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm-43-7c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm63 31c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM34 90c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zm56-76c1.657 0 3-1.343 3-3s-1.343-3-3-3-3 1.343-3 3 1.343 3 3 3zM12 86c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm28-65c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm23-11c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-6 60c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm29 22c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zM32 63c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm57-13c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm-9-21c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM60 91c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM35 41c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2zM12 60c1.105 0 2-.895 2-2s-.895-2-2-2-2 .895-2 2 .895 2 2 2z\"%3E%3C/path%3E%3C/svg%3E'), linear-gradient(to bottom, #ffffff, #fafafa)" 
+              }}
+            >
+              {status === "connecting" || isLoading ? (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <div className="w-16 h-16 border-4 border-t-amber-500 border-amber-200 rounded-full animate-spin mb-4"></div>
+                  <h3 className="text-lg font-medium text-gray-700 mb-1">Establishing Connection</h3>
+                  <p className="text-gray-500 text-center max-w-sm">
+                    Setting up your conversation with the AI language tutor. 
+                    This may take a few moments...
+                  </p>
+                </div>
+              ) : transcript.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full">
+                  <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-4">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-700 mb-1">Ready to Begin</h3>
+                  <p className="text-gray-500 text-center max-w-sm">
+                    Your AI tutor will greet you momentarily. Make sure your microphone is enabled 
+                    and speak clearly when responding.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4 px-2">
+                  {/* Date separator */}
+                  <div className="flex justify-center my-4">
+                    <div className="px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-500">
+                      Today, {new Date().toLocaleDateString()}
+                    </div>
+                  </div>
+                  
+                  {transcript.map((item) => (
+                    <div key={item.id} className={`flex ${item.speaker === "You" ? "justify-end" : "justify-start"} group`}>
+                      {/* AI Tutor avatar for messages */}
+                      {item.speaker !== "You" && (
+                        <div className="w-8 h-8 rounded-full bg-amber-100 flex-shrink-0 flex items-center justify-center mr-2 mt-1 overflow-hidden border border-amber-200">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-amber-600" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      )}
+                      
+                      <div className={`max-w-[75%] py-3 px-4 rounded-2xl shadow-sm ${
+                        item.speaker === "You" 
+                          ? "bg-blue-500 text-white" 
+                          : "bg-white border border-gray-100"
+                      } relative group-hover:shadow-md transition-shadow`}>
+                        {/* Subtle timestamp that appears on hover */}
+                        <div className={`text-[10px] ${item.speaker === "You" ? "text-blue-100" : "text-gray-400"} absolute -top-5 ${item.speaker === "You" ? "right-1" : "left-1"} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                          {new Date(item.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </div>
+                        
+                        <div className={`text-xs font-medium mb-1 ${item.speaker === "You" ? "text-blue-100" : "text-gray-500"}`}>
+                          {item.speaker}
+                        </div>
+                        <div className={`text-sm ${item.speaker === "You" ? "text-white" : "text-gray-800"}`}>
+                          {item.text}
+                        </div>
+                      </div>
+                      
+                      {/* User avatar for messages */}
+                      {item.speaker === "You" && (
+                        <div className="w-8 h-8 rounded-full bg-blue-100 flex-shrink-0 flex items-center justify-center ml-2 mt-1 overflow-hidden border border-blue-200">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-blue-600" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <div ref={transcriptEndRef} />
+                </div>
+              )}
+            </div>
+            
+            <div className="p-3 border-t bg-white text-sm flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                {isMicActive ? (
+                  <div className="flex items-center text-green-700">
+                    <span className="relative flex h-3 w-3 mr-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                    </span>
+                    Microphone active
+                  </div>
+                ) : (
+                  <div className="flex items-center text-red-600">
+                    <span className="h-3 w-3 bg-red-500 rounded-full mr-2"></span>
+                    Microphone muted
+                  </div>
+                )}
+                
+                <div className="w-px h-5 bg-gray-200 mx-1"></div>
+                
+                <div className="flex items-center text-gray-600">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                    <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+                  </svg>
+                  {transcript.length} messages
+                </div>
+              </div>
+              
+              <div className="text-xs px-2 py-1 bg-amber-50 text-amber-800 rounded-full">
+                Topic: {selectedTopic.length > 20 ? selectedTopic.substring(0, 20) + "..." : selectedTopic}
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <div className="mt-1 bg-gradient-to-r from-blue-50 to-blue-100 p-4 rounded-b-xl text-xs text-blue-700 border-t border-blue-200">
+          <h4 className="font-semibold mb-2 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+            Speaking Tips:
+          </h4>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+              <span>Speak clearly at a comfortable pace</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+              <span>Don't worry about small mistakes</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+              <span>Try to respond in complete sentences</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+              <span>Ask questions to keep conversation going</span>
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

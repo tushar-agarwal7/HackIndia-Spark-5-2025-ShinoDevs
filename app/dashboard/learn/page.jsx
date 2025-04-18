@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import Link from "next/link";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { motion } from "framer-motion";
 
 export default function LearnPage() {
   const router = useRouter();
@@ -193,6 +194,75 @@ export default function LearnPage() {
               </div>
             )}
           </div>
+
+          {/* Featured Quick Learn Module */}
+          {/* <motion.div 
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="mb-12"
+          >
+            <div className="bg-gradient-to-r from-blue-500 to-cyan-500 rounded-2xl shadow-lg overflow-hidden border border-blue-400">
+              <div className="p-6 md:p-8 flex flex-col md:flex-row items-center">
+                <div className="md:w-2/3 mb-6 md:mb-0 md:pr-8">
+                  <div className="inline-block px-3 py-1 bg-white/20 rounded-full text-white text-sm font-medium mb-4">
+                    Featured Learning Tool
+                  </div>
+                  <h2 className="text-3xl font-bold text-white mb-4">
+                    Learn {getLanguageName(languageCode)} in 10 Minutes
+                  </h2>
+                  <p className="text-blue-50 text-lg mb-6">
+                    Master essential phrases and vocabulary in just 10 minutes with our AI language tutor. Perfect for beginners or travelers!
+                  </p>
+                  <div className="flex flex-wrap gap-4 mb-6">
+                    <div className="bg-white/10 px-4 py-2 rounded-lg text-white">
+                      <span className="font-bold">10+</span> Essential Phrases
+                    </div>
+                    <div className="bg-white/10 px-4 py-2 rounded-lg text-white">
+                      <span className="font-bold">Quick</span> Pronunciation Guide
+                    </div>
+                    <div className="bg-white/10 px-4 py-2 rounded-lg text-white">
+                      <span className="font-bold">Interactive</span> Learning
+                    </div>
+                  </div>
+                  <Link
+                    href={getLearningModuleUrl("/dashboard/learn/quick-learn")}
+                    className="inline-flex items-center justify-center py-3 px-6 bg-white text-blue-600 font-medium rounded-lg transition-all duration-300 hover:bg-blue-50 hover:shadow-lg"
+                  >
+                    Start Quick Learn
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      className="h-5 w-5 ml-2"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M10.293 5.293a1 1 0 011.414 0l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414-1.414L12.586 11H5a1 1 0 110-2h7.586l-2.293-2.293a1 1 0 010-1.414z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </Link>
+                </div>
+                <div className="md:w-1/3 flex justify-center">
+                  <div className="relative">
+                    <div className="w-48 h-48 md:w-60 md:h-60 bg-white/20 rounded-full flex items-center justify-center p-2">
+                      <div className="w-full h-full bg-white/30 rounded-full flex items-center justify-center p-2">
+                        <div className="w-full h-full bg-white rounded-full flex items-center justify-center text-8xl">
+                          {getLanguageFlag(languageCode)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="absolute -top-2 -right-2 bg-white rounded-full p-2 shadow-lg">
+                      <div className="flex items-center justify-center bg-blue-600 text-white text-sm font-bold rounded-full w-14 h-14">
+                        10<br />min
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div> */}
 
           {/* Learning Modules Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 mb-12">
@@ -546,9 +616,7 @@ export default function LearnPage() {
                     </h3>
                     <div className="mt-2 text-blue-700">
                       <p>
-                        Combine multiple methods for best results! For example,
-                        learn vocabulary in context through conversation
-                        practice rather than isolated word lists.
+                        Try our new "Language in 10 Minutes" feature for a quick boost to your learning! Perfect for busy days when you can't fit in a longer session.
                       </p>
                     </div>
                   </div>

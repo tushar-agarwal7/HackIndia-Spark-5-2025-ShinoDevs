@@ -34,6 +34,9 @@ model User {
   lessons            LessonCompletion[]
 
   vocabulary         VocabularyPractice[]
+  quickLearnSession              QuickLearnSession[]  
+
+  userStatic          UserStatistic[]
    grammer             GrammarPractice[]
    speaking             SpeakingPractice[]
   speakingSession               SpeakingSession[]
@@ -189,8 +192,39 @@ model AIConversation {
   user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages          ConversationMessage[]
   evaluations       ConversationEvaluation?
+    quickLearnSessions QuickLearnSession[]
+
   
   @@index([userId, startedAt])
+}
+
+model QuickLearnSession {
+  id          Int       @id @default(autoincrement())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation AIConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  languageCode String
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+  status       String    @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED, ABANDONED
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  @@index([userId])
+  @@index([conversationId])
+  @@index([languageCode])
+}
+model UserStatistic {
+  id                   Int      @id @default(autoincrement())
+  userId               String
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  languageCode         String
+  totalLearningMinutes Int      @default(0)
+  quickLearnSessionCount Int    @default(0)
+  
+  @@unique([userId, languageCode])
+  @@index([userId])
 }
 
 model ConversationMessage {
